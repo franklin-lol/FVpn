@@ -108,16 +108,25 @@ install_deps() {
 ###############################################################################
 install_xray() {
     info "Installing Xray-core $XRAY_VERSION..."
-    local URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-${ARCH_SHORT}.zip"
+    
+    # Определяем правильный суффикс для архива Xray
+    local XRAY_ARCH
+    case "$ARCH" in
+        x86_64)  XRAY_ARCH="64" ;;
+        aarch64) XRAY_ARCH="arm64-v8a" ;;
+        *)       err "Unsupported arch for Xray: $ARCH" ;;
+    esac
+    
+    local URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-${XRAY_ARCH}.zip"
     local TMP=$(mktemp -d)
-    curl -fsSL "$URL" -o "$TMP/xray.zip"
+    
+    curl -fsSL "$URL" -o "$TMP/xray.zip" || err "Failed to download Xray from $URL"
     unzip -q "$TMP/xray.zip" -d "$TMP/xray"
     install -m 755 "$TMP/xray/xray" /usr/local/bin/xray
     rm -rf "$TMP"
 
     mkdir -p /usr/local/share/xray /etc/xray
-    # Download geoip/geosite
-    curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-${ARCH_SHORT}.zip" || true
+    # Скачиваем geoip/geosite (необязательно, но полезно)
     wget -qO /usr/local/share/xray/geoip.dat \
         "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" || warn "geoip.dat download failed (optional)"
     wget -qO /usr/local/share/xray/geosite.dat \
