@@ -10,7 +10,7 @@ UNIPROXY_DIR="/opt/uniproxy"
 LOG_FILE="/var/log/uniproxy-install.log"
 VERSION="1.0.0"
 PANEL_PORT=2095
-XRAY_VERSION="1.8.10"
+XRAY_VERSION="1.8.24"
 SINGBOX_VERSION="1.9.0"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -96,6 +96,7 @@ install_deps() {
         COMPOSE_URL="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$ARCH"
         curl -fsSL "$COMPOSE_URL" -o /usr/local/bin/docker-compose
         chmod +x /usr/local/bin/docker-compose
+        mkdir -p /usr/local/lib/docker/cli-plugins
         ln -sf /usr/local/bin/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
     fi
 
