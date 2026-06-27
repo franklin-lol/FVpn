@@ -1,0 +1,80 @@
+/* ============================================================
+   UniProxy — Global Styles
+   Palette: #0a0e1a (bg) · #0f1629 (surface) · #1a2340 (card)
+             #00d4ff (accent-cyan) · #7c3aed (accent-violet)
+             #10b981 (success) · #ef4444 (danger) · #f59e0b (warn)
+   Font: "JetBrains Mono" (data/code), "Inter" (UI)
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg:          #0a0e1a;
+  --surface:     #0f1629;
+  --card:        #1a2340;
+  --card-hover:  #1f2d4e;
+  --border:      #243050;
+  --cyan:        #00d4ff;
+  --cyan-dim:    #00a8cc;
+  --violet:      #7c3aed;
+  --success:     #10b981;
+  --danger:      #ef4444;
+  --warn:        #f59e0b;
+  --text:        #e2e8f0;
+  --text-muted:  #64748b;
+  --text-dim:    #334155;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: var(--surface); }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--cyan-dim); }
+
+/* Selection */
+::selection { background: rgba(0,212,255,0.2); }
+
+/* Mono */
+.mono { font-family: "JetBrains Mono", monospace; }
+
+/* Glow effects */
+.glow-cyan   { text-shadow: 0 0 12px rgba(0,212,255,0.7); }
+.glow-violet { text-shadow: 0 0 12px rgba(124,58,237,0.7); }
+.box-glow    { box-shadow: 0 0 0 1px var(--border), 0 0 20px rgba(0,212,255,0.05); }
+.box-glow-cyan { box-shadow: 0 0 0 1px var(--cyan), 0 0 24px rgba(0,212,255,0.15); }
+
+/* Status dots */
+.dot-online  { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--success); box-shadow:0 0 6px var(--success); }
+.dot-offline { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--danger); }
+.dot-unknown { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--text-muted); }
+
+/* Pulse animation for live indicator */
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+.pulse { animation: pulse 1.8s ease-in-out infinite; }
+
+/* Fade in */
+@keyframes fadeIn { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
+.fade-in { animation: fadeIn 0.25s ease-out; }
+
+/* Scan line overlay (subtle cyberpunk texture) */
+.scanlines::after {
+  content:"";
+  position:fixed; inset:0; pointer-events:none; z-index:9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+}

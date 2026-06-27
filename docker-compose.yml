@@ -1,0 +1,142 @@
+version: "3.9"
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  ###########################################################################
+  # BACKEND — FastAPI
+  ###########################################################################
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: uniproxy-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATABASE_URL=sqlite:////data/uniproxy.db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - backend-data:/data
+      - /etc/uniproxy/ssl:/ssl:ro
+      - /usr/local/bin/xray:/usr/local/bin/xray:ro
+      - /usr/local/bin/sing-box:/usr/local/bin/sing-box:ro
+      - /etc/xray:/etc/xray
+      - /etc/sing-box:/etc/sing-box
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - uniproxy-net
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  ###########################################################################
+  # FRONTEND — React (Nginx-served static)
+  ###########################################################################
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: uniproxy-frontend
+    restart: unless-stopped
+    networks:
+      - uniproxy-net
+    logging: *default-logging
+
+  ###########################################################################
+  # NGINX — Reverse proxy + SSL termination
+  ###########################################################################
+  nginx:
+    build:
+      context: ./nginx
+    container_name: uniproxy-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2095:2095"
+      - "2096:2096"
+    volumes:
+      - /etc/uniproxy/ssl:/ssl:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - uniproxy-net
+    logging: *default-logging
+
+  ###########################################################################
+  # REDIS — Cache + pubsub for real-time
+  ###########################################################################
+  redis:
+    image: redis:7-alpine
+    container_name: uniproxy-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning --requirepass "${REDIS_PASSWORD:-uniproxy}"
+    volumes:
+      - redis-data:/data
+    networks:
+      - uniproxy-net
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ###########################################################################
+  # TELEGRAM BOT
+  ###########################################################################
+  bot:
+    build:
+      context: ./bot
+    container_name: uniproxy-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - API_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - uniproxy-net
+    logging: *default-logging
+
+  ###########################################################################
+  # WATCHTOWER — Auto-update containers
+  ###########################################################################
+  watchtower:
+    image: containrrr/watchtower
+    container_name: uniproxy-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 86400 --cleanup
+    networks:
+      - uniproxy-net
+    logging: *default-logging
+
+###############################################################################
+volumes:
+  backend-data:
+  redis-data:
+  nginx-logs:
+
+networks:
+  uniproxy-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
