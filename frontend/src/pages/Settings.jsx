@@ -212,7 +212,7 @@ export default function Settings() {
             <p>Supports 8+ protocols: Hysteria2, VLESS-Reality, ShadowTLS, Shadowsocks 2022, Trojan, TUIC, WireGuard, SSH.</p>
             <p>Config generation for: Sing-box, Clash, Hiddify, Shadowrocket, v2rayNG.</p>
             <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-              <a href="https://github.com/your-repo/UniProxy" target="_blank" rel="noopener"
+              <a href="https://github.com/franklin-lol/FVpn" target="_blank" rel="noopener"
                  className="hover:underline" style={{ color: "var(--cyan)" }}>
                 GitHub Repository →
               </a>
