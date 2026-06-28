@@ -1,8 +1,11 @@
 # Stage 1: Build
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --prefer-offline
+
+COPY package.json ./
+# npm install instead of npm ci — works without package-lock.json
+RUN npm install --legacy-peer-deps
+
 COPY . .
 RUN npm run build
 
