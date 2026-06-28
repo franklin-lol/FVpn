@@ -135,7 +135,7 @@ async def check_node(node_id: int, _: User = Depends(require_admin), db: AsyncSe
     return {"node_id": node_id, "status": status, "latency_ms": latency}
 
 
-@router.post("/{node_id}/check-all")
+@router.post("/check-all")
 async def check_all_nodes(
     bg: BackgroundTasks,
     _: User = Depends(require_admin),
