@@ -1,13 +1,11 @@
-x-logging: &default-logging
+x-logging: &log
   driver: "json-file"
-  options:
-    max-size: "20m"
-    max-file: "5"
+  options: { max-size: "20m", max-file: "5" }
 
 services:
-  ###########################################################################
-  # BACKEND — FastAPI
-  ###########################################################################
+  ##############################################################################
+  # BACKEND
+  ##############################################################################
   backend:
     build:
       context: ./backend
@@ -15,15 +13,13 @@ services:
     container_name: uniproxy-backend
     restart: unless-stopped
     env_file: .env
-    # No explicit `environment:` block — everything comes from .env
-    # This prevents env overrides fighting with .env values
     volumes:
       - backend-data:/data
       - /etc/fvpn/ssl:/ssl:ro
-      - /usr/local/bin/xray:/usr/local/bin/xray:ro
-      - /usr/local/bin/sing-box:/usr/local/bin/sing-box:ro
-      - /etc/xray:/etc/xray
-      - /etc/sing-box:/etc/sing-box
+      - ./configs/xray:/etc/xray        # shared with xray container
+      - ./configs/singbox:/etc/sing-box  # shared with singbox container
+      # Docker socket so backend can restart proxy containers
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -31,17 +27,17 @@ services:
         condition: service_healthy
     networks:
       - fvpn-net
-    logging: *default-logging
+    logging: *log
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
+      interval: 20s
+      timeout: 5s
       retries: 5
       start_period: 30s
 
-  ###########################################################################
-  # FRONTEND — React static via Nginx
-  ###########################################################################
+  ##############################################################################
+  # FRONTEND
+  ##############################################################################
   frontend:
     build:
       context: ./frontend
@@ -50,11 +46,11 @@ services:
     restart: unless-stopped
     networks:
       - fvpn-net
-    logging: *default-logging
+    logging: *log
 
-  ###########################################################################
+  ##############################################################################
   # NGINX — SSL termination + reverse proxy
-  ###########################################################################
+  ##############################################################################
   nginx:
     build:
       context: ./nginx
@@ -73,51 +69,79 @@ services:
       - frontend
     networks:
       - fvpn-net
-    logging: *default-logging
+    logging: *log
 
-  ###########################################################################
-  # REDIS — Cache + pub/sub
-  ###########################################################################
+  ##############################################################################
+  # REDIS
+  ##############################################################################
   redis:
     image: redis:7-alpine
     container_name: uniproxy-redis
     restart: unless-stopped
-    # Password is read from compose variable substitution (.env in project root)
     command: >
       redis-server
       --save 60 1
       --loglevel warning
-      --requirepass ${REDIS_PASSWORD:-fvpn_redis_secret}
+      --requirepass ${REDIS_PASSWORD:-fvpn_redis}
     volumes:
       - redis-data:/data
     networks:
       - fvpn-net
-    logging: *default-logging
+    logging: *log
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-fvpn_redis_secret}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-fvpn_redis}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  ###########################################################################
+  ##############################################################################
+  # XRAY-CORE — VLESS/Trojan/Shadowsocks proxy
+  ##############################################################################
+  xray:
+    image: teddysun/xray:latest
+    container_name: fvpn-xray
+    restart: unless-stopped
+    network_mode: host          # host network so it can bind proxy ports directly
+    volumes:
+      - ./configs/xray:/etc/xray
+      - /usr/local/share/xray:/usr/local/share/xray:ro
+    logging: *log
+
+  ##############################################################################
+  # SING-BOX — Hysteria2/TUIC/ShadowTLS/WireGuard proxy
+  ##############################################################################
+  singbox:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: fvpn-singbox
+    restart: unless-stopped
+    network_mode: host          # host network for direct port binding
+    volumes:
+      - ./configs/singbox:/etc/sing-box
+    cap_add:
+      - NET_ADMIN               # required for TUN/WireGuard
+    logging: *log
+
+  ##############################################################################
   # TELEGRAM BOT
-  ###########################################################################
+  ##############################################################################
   bot:
     build:
       context: ./bot
     container_name: uniproxy-bot
     restart: unless-stopped
     env_file: .env
+    environment:
+      - API_URL=http://backend:8000
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - fvpn-net
-    logging: *default-logging
+    logging: *log
 
-  ###########################################################################
+  ##############################################################################
   # WATCHTOWER — nightly auto-update
-  ###########################################################################
+  ##############################################################################
   watchtower:
     image: containrrr/watchtower
     container_name: uniproxy-watchtower
@@ -127,9 +151,9 @@ services:
     command: --interval 86400 --cleanup
     networks:
       - fvpn-net
-    logging: *default-logging
+    logging: *log
 
-###############################################################################
+################################################################################
 volumes:
   backend-data:
   redis-data:
