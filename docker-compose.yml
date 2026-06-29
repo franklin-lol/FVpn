@@ -114,7 +114,12 @@ services:
     image: ghcr.io/sagernet/sing-box:latest
     container_name: fvpn-singbox
     restart: unless-stopped
-    network_mode: host          # host network for direct port binding
+    network_mode: host   
+    command:
+    - run
+    - -c
+    - /etc/sing-box/config.json
+           # host network for direct port binding
     volumes:
       - ./configs/singbox:/etc/sing-box
     cap_add:
