@@ -9,8 +9,6 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
-    # check_same_thread only valid for SQLite sync driver; aiosqlite doesn't need it
-    # but harmless to pass — aiosqlite ignores unknown connect_args
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
 )
 
@@ -27,14 +25,12 @@ class Base(DeclarativeBase):
 
 
 async def init_db():
-    """Create all tables; seed default admin on first run."""
-    # Import models to register with Base.metadata (all defined in app.models)
-    import app.models  # noqa: F401 — side-effect: registers ORM classes
+    """Create all tables; seed default admin; seed default local node+protocols once."""
+    import app.models  # noqa: F401 — registers ORM classes with Base.metadata
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Seed admin only if table is empty
     from app.models import User
     from app.core.security import hash_password
     from sqlalchemy import select
@@ -51,6 +47,13 @@ async def init_db():
             )
             session.add(admin)
             await session.commit()
+
+    # One-time: seed a "Local Server" node with 4 ready-to-use protocols so
+    # the proxy stack works immediately after install, with zero manual
+    # SSH/Auto-Setup steps. Safe to call on every boot — it's a no-op after
+    # the first successful run (see app/core/bootstrap.py for details).
+    from app.core.bootstrap import run_once
+    await run_once()
 
 
 async def get_db():

@@ -42,7 +42,11 @@ class UserOut(BaseModel):
     is_active: bool
     traffic_limit_gb: float
     traffic_used_gb: float
-    traffic_remaining_gb: float
+    # Optional, not float: the ORM property returns None for unlimited users
+    # (traffic_limit_gb == 0) instead of float('inf'), which plain JSON cannot
+    # encode. Returning `null` here is what every client already expects from
+    # an "unlimited" sentinel — frontend already treats limit===0 as unlimited.
+    traffic_remaining_gb: Optional[float] = None
     expire_at: Optional[datetime]
     is_expired: bool
     created_at: datetime
@@ -50,7 +54,6 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# "" instead of "/" — with redirect_slashes=False, "/" creates /api/users/ (not /api/users)
 @router.get("", response_model=list[UserOut])
 async def list_users(
     skip: int = 0, limit: int = 100,

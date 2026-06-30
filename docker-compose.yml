@@ -58,9 +58,15 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
       - "2095:2095"
       - "2096:2096"
+      # NOTE: port 443 is intentionally NOT published here. nginx.conf has
+      # no `listen 443` server block (panel lives on 2095/2096), but Docker
+      # still reserves the host port via iptables for ANY published mapping
+      # regardless of whether the app inside actually listens on it. That
+      # silently fought with xray's host-network TCP/443 bind for
+      # VLESS-Reality — whichever container started first won the port,
+      # the other crash-looped. Port 443 is for the proxy containers only.
     volumes:
       - /etc/fvpn/ssl:/ssl:ro
       - nginx-logs:/var/log/nginx
@@ -114,12 +120,13 @@ services:
     image: ghcr.io/sagernet/sing-box:latest
     container_name: fvpn-singbox
     restart: unless-stopped
-    network_mode: host   
-    command:
-    - run
-    - -c
-    - /etc/sing-box/config.json
-           # host network for direct port binding
+    network_mode: host          # host network for direct port binding
+    # ghcr.io/sagernet/sing-box's ENTRYPOINT is the bare `sing-box` binary —
+    # without an explicit subcommand it just prints help and exits, which
+    # Docker then restarts forever under `restart: unless-stopped`
+    # (a silent crash-loop, not an obvious config error). `run -c <path>`
+    # is the actual "start the proxy" subcommand.
+    command: ["run", "-c", "/etc/sing-box/config.json"]
     volumes:
       - ./configs/singbox:/etc/sing-box
     cap_add:

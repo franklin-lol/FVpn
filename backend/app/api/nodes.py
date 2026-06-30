@@ -54,9 +54,9 @@ class AutoSetupRequest(BaseModel):
     extra: dict = {}
 
 
-# IMPORTANT: /check-all must be registered BEFORE /{node_id} routes
-# to prevent ambiguity (even though node_id: int prevents str match,
-# explicit ordering is safer and more readable).
+# IMPORTANT: /check-all must be registered BEFORE /{node_id} so it isn't
+# swallowed as a path parameter — same reasoning applies to any other
+# static sub-route added later under this router.
 
 @router.get("", response_model=list[NodeOut])
 async def list_nodes(
@@ -92,7 +92,18 @@ async def create_node(
     db.add(node)
     await db.commit()
     await db.refresh(node)
-    return node
+
+    # Build the response manually instead of `return node`.
+    # NodeOut.protocols is a plain list[dict] field, but Node.protocols is a
+    # SQLAlchemy lazy relationship of the same name. With from_attributes=True,
+    # pydantic auto-reads node.protocols to fill it — triggering a lazy load
+    # AFTER this request's async session/greenlet context has already ended
+    # (response serialization happens outside the route handler's await chain).
+    # That raised: MissingGreenlet: greenlet_spawn has not been called.
+    # A brand-new node has no protocols yet anyway, so just set it explicitly.
+    out = NodeOut.model_validate(node)
+    out.protocols = []
+    return out
 
 
 @router.post("/check-all")
