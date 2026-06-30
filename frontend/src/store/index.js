@@ -5,9 +5,9 @@ import api from "../utils/api";
 export const useAuthStore = create(
   persist(
     (set, get) => ({
-      token:    null,
-      user:     null,
-      isAdmin:  false,
+      token:   null,
+      user:    null,
+      isAdmin: false,
 
       login: async (username, password) => {
         const form = new URLSearchParams({ username, password });
@@ -26,12 +26,10 @@ export const useAuthStore = create(
 
       hydrate: () => {
         const { token } = get();
-        if (token) {
-          api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-        }
+        if (token) api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
       },
     }),
-    { name: "uniproxy-auth", partialize: (s) => ({ token: s.token, user: s.user, isAdmin: s.isAdmin }) }
+    { name: "fvpn-auth", partialize: (s) => ({ token: s.token, user: s.user, isAdmin: s.isAdmin }) }
   )
 );
 

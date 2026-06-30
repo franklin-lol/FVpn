@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from "react";
-import {
-  RefreshCw, RotateCcw, HardDrive, Shield, Terminal,
-  Activity, Server, Download, Upload
-} from "lucide-react";
+import { RotateCcw, Shield, Terminal, Download } from "lucide-react";
 import api, { statsApi } from "../utils/api";
 import toast from "react-hot-toast";
 
+function Sk({ h=14, w="100%" }) {
+  return <div className="skeleton" style={{ height:h, width:w, borderRadius:4 }} />;
+}
+
 function Card({ title, children }) {
   return (
-    <div className="rounded-lg p-5 box-glow" style={{ background: "var(--card)" }}>
-      <h2 className="text-xs uppercase tracking-widest mb-4 font-semibold"
-          style={{ color: "var(--text-muted)" }}>{title}</h2>
+    <div className="card" style={{ padding:20 }}>
+      <div className="label" style={{ marginBottom:16 }}>{title}</div>
       {children}
     </div>
   );
@@ -18,23 +18,23 @@ function Card({ title, children }) {
 
 function KV({ label, value, accent }) {
   return (
-    <div className="flex items-center justify-between py-1.5 border-b"
-         style={{ borderColor: "var(--border)" }}>
-      <span className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</span>
-      <span className="text-xs mono" style={{ color: accent || "var(--text)" }}>{value ?? "—"}</span>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+      padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
+      <span style={{ fontSize:12, color:"var(--text-muted)" }}>{label}</span>
+      <span className="mono truncate" style={{ fontSize:12, color: accent || "var(--text)", maxWidth:220, textAlign:"right" }}>
+        {value ?? "—"}
+      </span>
     </div>
   );
 }
 
-function ServiceBtn({ label, onRestart, onStatus }) {
+function ServiceRow({ label, onRestart, onStatus }) {
   const [status, setStatus] = useState(null);
   const [busy,   setBusy]   = useState(false);
 
   const checkStatus = async () => {
-    try {
-      const { data } = await onStatus();
-      setStatus(data.active);
-    } catch { setStatus(null); }
+    try { const { data } = await onStatus(); setStatus(data.active); }
+    catch { setStatus(null); }
   };
 
   useEffect(() => { checkStatus(); }, []);
@@ -44,23 +44,20 @@ function ServiceBtn({ label, onRestart, onStatus }) {
     try {
       await onRestart();
       toast.success(`${label} restarted`);
-      await checkStatus();
-    } catch { toast.error(`${label} restart failed`); }
-    finally { setBusy(false); }
+      setTimeout(checkStatus, 1500);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || `${label} restart failed`);
+    } finally { setBusy(false); }
   };
 
   return (
-    <div className="flex items-center justify-between py-2">
-      <div className="flex items-center gap-2">
-        <span className={`dot-${status === true ? "online" : status === false ? "offline" : "unknown"}`} />
-        <span className="text-sm mono">{label}</span>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 0" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <span className={`dot dot-${status===true?"online":status===false?"offline":"unknown"}`} />
+        <span className="mono" style={{ fontSize:13 }}>{label}</span>
       </div>
-      <button
-        onClick={restart} disabled={busy}
-        className="flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-colors hover:bg-white/10 disabled:opacity-50"
-        style={{ border: "1px solid var(--border)", color: "var(--cyan)" }}
-      >
-        <RotateCcw size={11} className={busy ? "animate-spin" : ""} />
+      <button className="btn btn-ghost btn-sm" onClick={restart} disabled={busy}>
+        {busy ? <div className="btn-spinner"/> : <RotateCcw size={11}/>}
         Restart
       </button>
     </div>
@@ -68,7 +65,7 @@ function ServiceBtn({ label, onRestart, onStatus }) {
 }
 
 export default function Settings() {
-  const [sysInfo, setSysInfo] = useState(null);
+  const [sysInfo,  setSysInfo]  = useState(null);
   const [versions, setVersions] = useState(null);
   const [certInfo, setCertInfo] = useState(null);
   const [logLines, setLogLines] = useState("");
@@ -82,161 +79,116 @@ export default function Settings() {
 
   const viewLogs = async () => {
     try {
-      const { data } = await api.get("/api/system/logs/uniproxy?lines=100");
+      const { data } = await api.get("/api/system/logs/uniproxy?lines=150");
       setLogLines(data);
       setShowLog(true);
     } catch { toast.error("Cannot load logs"); }
   };
 
-  const triggerBackup = async () => {
-    toast.loading("Running backup...");
-    try {
-      await api.post("/api/system/backup");
-      toast.dismiss();
-      toast.success("Backup complete");
-    } catch {
-      toast.dismiss();
-      toast.error("Backup failed");
-    }
+  const backup = async () => {
+    const id = toast.loading("Running backup…");
+    try { await api.post("/api/system/backup"); toast.success("Backup complete", { id }); }
+    catch (e) { toast.error(e.response?.data?.detail || "Backup failed", { id }); }
   };
 
   const renewCert = async () => {
-    toast.loading("Renewing certificate...");
+    const id = toast.loading("Renewing certificate…");
     try {
       const { data } = await api.post("/api/system/cert/renew");
-      toast.dismiss();
-      toast.success(data.code === 0 ? "Certificate renewed" : `Code ${data.code}`);
-    } catch {
-      toast.dismiss();
-      toast.error("Renewal failed");
-    }
+      toast[data.code === 0 ? "success" : "error"](data.code === 0 ? "Certificate renewed" : `Failed (code ${data.code})`, { id });
+    } catch { toast.error("Renewal failed", { id }); }
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-xl font-bold mono mb-6" style={{ color: "var(--cyan)" }}>Settings</h1>
+    <div className="page" style={{ maxWidth:1100 }}>
+      <div className="page-header">
+        <div>
+          <div className="page-title">Settings</div>
+          <div className="page-sub">System status, services, and maintenance</div>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
         {/* Versions */}
         <Card title="Software Versions">
-          <KV label="UniProxy"  value={versions?.uniproxy}  accent="var(--cyan)"    />
-          <KV label="Xray-core" value={versions?.xray}      accent="var(--success)" />
-          <KV label="Sing-box"  value={versions?.sing_box}  accent="var(--success)" />
+          {versions ? <>
+            <KV label="FVpn"      value={versions.fvpn || versions.uniproxy} accent="var(--cyan)" />
+            <KV label="Xray-core" value={versions.xray}                      accent="var(--success)" />
+            <KV label="Sing-box"  value={versions.sing_box}                  accent="var(--success)" />
+          </> : [1,2,3].map((k)=><Sk key={k} h={12} style={{ marginBottom:8 }}/>)}
         </Card>
 
-        {/* System Resources */}
+        {/* System resources */}
         <Card title="System Resources">
-          {sysInfo ? (
-            <>
-              <KV label="CPU Cores"   value={sysInfo.cpu_cores} />
-              <KV label="RAM Total"   value={`${sysInfo.ram.total_gb} GB`} />
-              <KV label="RAM Used"    value={`${sysInfo.ram.used_gb} GB (${sysInfo.ram.pct}%)`}
-                  accent={sysInfo.ram.pct > 85 ? "var(--danger)" : "var(--success)"} />
-              <KV label="Disk Total"  value={`${sysInfo.disk.total_gb} GB`} />
-              <KV label="Disk Used"   value={`${sysInfo.disk.used_gb} GB (${sysInfo.disk.pct}%)`}
-                  accent={sysInfo.disk.pct > 85 ? "var(--danger)" : "var(--warn)"} />
-              <KV label="Uptime"      value={`${sysInfo.uptime_hours}h`} accent="var(--cyan)" />
-              <KV label="Net Sent"    value={`${sysInfo.network.sent_gb} GB`} />
-              <KV label="Net Recv"    value={`${sysInfo.network.recv_gb} GB`} />
-            </>
-          ) : (
-            <div className="text-center py-4 text-xs" style={{ color: "var(--text-muted)" }}>
-              Loading system info…
-            </div>
-          )}
+          {sysInfo ? <>
+            <KV label="CPU Cores"  value={sysInfo.cpu_cores} />
+            <KV label="RAM"        value={`${sysInfo.ram.used_gb} / ${sysInfo.ram.total_gb} GB (${sysInfo.ram.pct}%)`}
+                accent={sysInfo.ram.pct > 85 ? "var(--danger)" : "var(--success)"} />
+            <KV label="Disk"       value={`${sysInfo.disk.used_gb} / ${sysInfo.disk.total_gb} GB (${sysInfo.disk.pct}%)`}
+                accent={sysInfo.disk.pct > 85 ? "var(--danger)" : "var(--warn)"} />
+            <KV label="Uptime"     value={`${sysInfo.uptime_hours}h`} accent="var(--cyan)" />
+            <KV label="Network"    value={`↑${sysInfo.network.sent_gb} GB ↓${sysInfo.network.recv_gb} GB`} />
+          </> : [1,2,3,4].map((k)=><Sk key={k} h={12} style={{ marginBottom:8 }}/>)}
         </Card>
 
-        {/* Service Control */}
+        {/* Service control */}
         <Card title="Service Control">
-          <ServiceBtn
-            label="xray"
-            onRestart={() => api.post("/api/system/xray/restart")}
-            onStatus={()   => api.get("/api/system/xray/status")}
-          />
-          <ServiceBtn
-            label="sing-box"
-            onRestart={() => api.post("/api/system/singbox/restart")}
-            onStatus={()   => api.get("/api/system/singbox/status")}
-          />
-          <div className="mt-3 flex flex-col gap-2">
-            <button onClick={viewLogs}
-              className="flex items-center gap-2 px-3 py-1.5 rounded text-xs w-full justify-center hover:bg-white/10 transition-colors"
-              style={{ border: "1px solid var(--border)", color: "var(--text-muted)" }}>
-              <Terminal size={12} /> View Logs
-            </button>
-          </div>
+          <ServiceRow label="xray"     onRestart={()=>api.post("/api/system/xray/restart")}     onStatus={()=>api.get("/api/system/xray/status")} />
+          <ServiceRow label="sing-box" onRestart={()=>api.post("/api/system/singbox/restart")}  onStatus={()=>api.get("/api/system/singbox/status")} />
+          <button className="btn btn-ghost btn-sm" onClick={viewLogs} style={{ width:"100%", justifyContent:"center", marginTop:10 }}>
+            <Terminal size={12}/>View Logs
+          </button>
         </Card>
 
-        {/* TLS Certificate */}
+        {/* TLS */}
         <Card title="TLS Certificate">
-          {certInfo ? (
-            <>
-              <KV label="Domain"     value={certInfo.domain} />
-              <KV label="Valid"      value={certInfo.valid ? "Yes" : "No"}
-                  accent={certInfo.valid ? "var(--success)" : "var(--danger)"} />
-              {certInfo.not_before && <KV label="Not Before" value={certInfo.not_before} />}
-              {certInfo.not_after  && <KV label="Not After"  value={certInfo.not_after}  />}
-              <button onClick={renewCert}
-                className="w-full mt-4 py-2 rounded text-xs font-semibold hover:opacity-90 transition-all"
-                style={{ border: "1px solid var(--cyan)", color: "var(--cyan)", background: "transparent" }}>
-                <Shield size={12} className="inline mr-1.5" />
-                Renew Certificate
-              </button>
-            </>
-          ) : (
-            <div className="text-center py-4 text-xs" style={{ color: "var(--text-muted)" }}>
-              Loading cert info…
-            </div>
-          )}
+          {certInfo ? <>
+            <KV label="Domain" value={certInfo.domain} />
+            <KV label="Valid"  value={certInfo.valid ? "Yes" : "No"} accent={certInfo.valid ? "var(--success)" : "var(--danger)"} />
+            {certInfo.not_before && <KV label="Issued"  value={certInfo.not_before} />}
+            {certInfo.not_after  && <KV label="Expires" value={certInfo.not_after}  />}
+            <button className="btn btn-ghost btn-sm" onClick={renewCert} style={{ width:"100%", justifyContent:"center", marginTop:10, color:"var(--cyan)", borderColor:"rgba(0,212,255,.3)" }}>
+              <Shield size={12}/>Renew Certificate
+            </button>
+          </> : [1,2,3].map((k)=><Sk key={k} h={12} style={{ marginBottom:8 }}/>)}
         </Card>
 
         {/* Backup */}
         <Card title="Backup & Restore">
-          <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
-            Backups include database, protocol configs, and subscription tokens.
-            Auto-backup runs every 6 hours via cron.
+          <p style={{ fontSize:12, color:"var(--text-muted)", marginBottom:14, lineHeight:1.6 }}>
+            Backups include database, protocol configs, and subscription tokens. Auto-backup runs every 6 hours.
           </p>
-          <div className="flex gap-2">
-            <button onClick={triggerBackup}
-              className="flex-1 flex items-center justify-center gap-2 py-2 rounded text-xs font-semibold hover:opacity-90"
-              style={{ background: "var(--success)", color: "#fff" }}>
-              <Download size={12} /> Backup Now
-            </button>
-          </div>
+          <button className="btn btn-primary btn-sm" onClick={backup} style={{ width:"100%", justifyContent:"center" }}>
+            <Download size={12}/>Backup Now
+          </button>
         </Card>
 
         {/* About */}
-        <Card title="About UniProxy">
-          <div className="space-y-2 text-xs" style={{ color: "var(--text-muted)" }}>
-            <p>Open-source unified proxy management panel.</p>
-            <p>Supports 8+ protocols: Hysteria2, VLESS-Reality, ShadowTLS, Shadowsocks 2022, Trojan, TUIC, WireGuard, SSH.</p>
-            <p>Config generation for: Sing-box, Clash, Hiddify, Shadowrocket, v2rayNG.</p>
-            <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+        <Card title="About FVpn">
+          <div style={{ fontSize:12, color:"var(--text-muted)", lineHeight:1.7 }}>
+            <p>Self-hosted unified proxy management panel.</p>
+            <p style={{ marginTop:6 }}>8 protocols: Hysteria2, VLESS-Reality, ShadowTLS, Shadowsocks 2022, Trojan, TUIC, WireGuard, SSH.</p>
+            <p style={{ marginTop:6 }}>Config generation: Sing-box, Clash, Hiddify, Shadowrocket, v2rayNG.</p>
+            <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid var(--border)" }}>
               <a href="https://github.com/franklin-lol/FVpn" target="_blank" rel="noopener"
-                 className="hover:underline" style={{ color: "var(--cyan)" }}>
-                GitHub Repository →
+                 className="mono" style={{ color:"var(--cyan)", textDecoration:"none" }}>
+                github.com/franklin-lol/FVpn →
               </a>
             </div>
           </div>
         </Card>
       </div>
 
-      {/* Log viewer */}
       {showLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-             style={{ background: "rgba(0,0,0,0.85)" }}>
-          <div className="w-full max-w-3xl rounded-xl overflow-hidden box-glow"
-               style={{ background: "var(--card)" }}>
-            <div className="flex items-center justify-between px-5 py-3"
-                 style={{ borderBottom: "1px solid var(--border)" }}>
-              <span className="mono text-sm" style={{ color: "var(--cyan)" }}>
-                /var/log/uniproxy.log
-              </span>
-              <button onClick={() => setShowLog(false)}
-                      className="text-slate-500 hover:text-slate-300 text-xl">×</button>
+        <div className="overlay" onClick={(e) => e.target===e.currentTarget && setShowLog(false)}>
+          <div className="modal modal-wide" style={{ padding:0, overflow:"hidden" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+              padding:"14px 20px", borderBottom:"1px solid var(--border)" }}>
+              <span className="mono" style={{ fontSize:13, color:"var(--cyan)" }}>/var/log/fvpn.log</span>
+              <button className="btn-icon" onClick={() => setShowLog(false)} style={{ border:"none" }}>✕</button>
             </div>
-            <pre className="p-5 text-xs overflow-auto max-h-96 mono"
-                 style={{ color: "#a8b4c8", background: "#060a14" }}>
+            <pre style={{ padding:20, fontSize:11, overflow:"auto", maxHeight:420,
+              fontFamily:"JetBrains Mono,monospace", color:"#a8b4c8", background:"#060a14", margin:0 }}>
               {logLines || "No log output"}
             </pre>
           </div>

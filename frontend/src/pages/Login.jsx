@@ -1,140 +1,96 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Shield, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Zap } from "lucide-react";
 import { useAuthStore } from "../store";
 import toast from "react-hot-toast";
 
 export default function Login() {
-  const [form,    setForm]    = useState({ username: "", password: "" });
+  const [form,    setForm]    = useState({ username:"", password:"" });
   const [show,    setShow]    = useState(false);
   const [loading, setLoading] = useState(false);
   const login    = useAuthStore((s) => s.login);
+  const token    = useAuthStore((s) => s.token);
   const navigate = useNavigate();
+
+  useEffect(() => { if (token) navigate("/dashboard"); }, [token, navigate]);
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.username || !form.password) return toast.error("Fill all fields");
+    if (!form.username || !form.password) { toast.error("Fill all fields"); return; }
     setLoading(true);
     try {
       await login(form.username, form.password);
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Login failed");
-    } finally {
-      setLoading(false);
-    }
+      toast.error(err.response?.data?.detail || "Invalid credentials");
+    } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 scanlines"
-         style={{ background: "var(--bg)" }}>
-      {/* Background grid */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        backgroundImage: "linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)",
-        backgroundSize: "48px 48px",
-        opacity: 0.3,
-      }} />
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
+      background:"var(--bg)", padding:16, position:"relative", overflow:"hidden" }}>
+      {/* Grid bg */}
+      <div style={{ position:"absolute", inset:0, pointerEvents:"none",
+        backgroundImage:"linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)",
+        backgroundSize:"52px 52px", opacity:.35 }} />
+      {/* Glow */}
+      <div style={{ position:"absolute", width:600, height:600, borderRadius:"50%", pointerEvents:"none",
+        background:"radial-gradient(ellipse,rgba(0,212,255,.05) 0%,transparent 70%)",
+        top:"50%", left:"50%", transform:"translate(-50%,-50%)" }} />
 
-      <div className="relative w-full max-w-sm fade-in">
-        {/* Glow halo */}
-        <div className="absolute inset-0 rounded-2xl blur-3xl"
-             style={{ background: "radial-gradient(ellipse at center,rgba(0,212,255,0.08),transparent 70%)" }} />
+      <div className="fade-in" style={{ position:"relative", width:"100%", maxWidth:380 }}>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border-light)", borderRadius:16,
+          padding:32, boxShadow:"0 32px 80px rgba(0,0,0,.55),0 0 0 1px rgba(0,212,255,.04) inset" }}>
 
-        <div className="relative rounded-2xl p-8 box-glow" style={{ background: "var(--card)" }}>
           {/* Logo */}
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-4"
-                 style={{ background: "linear-gradient(135deg,rgba(0,212,255,0.2),rgba(124,58,237,0.2))",
-                          border: "1px solid rgba(0,212,255,0.3)" }}>
-              <Shield size={28} style={{ color: "var(--cyan)" }} />
+          <div style={{ textAlign:"center", marginBottom:32 }}>
+            <div style={{ width:50, height:50, borderRadius:14, margin:"0 auto 14px",
+              background:"linear-gradient(135deg,rgba(0,212,255,.15),rgba(124,58,237,.15))",
+              border:"1px solid rgba(0,212,255,.22)",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              boxShadow:"0 0 28px rgba(0,212,255,.1)" }}>
+              <Zap size={22} style={{ color:"var(--cyan)" }} />
             </div>
-            <h1 className="text-xl font-bold mono tracking-widest" style={{ color: "var(--cyan)" }}>
-              UNIPROXY
-            </h1>
-            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-              Unified Proxy Management
-            </p>
+            <div style={{ fontFamily:"JetBrains Mono,monospace", fontWeight:700, fontSize:22,
+              color:"var(--cyan)", letterSpacing:".08em", textShadow:"0 0 22px rgba(0,212,255,.35)" }}>
+              FVpn
+            </div>
+            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:4, letterSpacing:".04em" }}>
+              Proxy Management Panel
+            </div>
           </div>
 
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <label className="block text-xs uppercase tracking-widest mb-2"
-                     style={{ color: "var(--text-muted)" }}>
-                Username
-              </label>
-              <input
-                type="text"
-                autoComplete="username"
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-lg text-sm mono outline-none transition-all"
-                style={{
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text)",
-                }}
-                onFocus={(e) => (e.target.style.borderColor = "var(--cyan)")}
-                onBlur={(e)  => (e.target.style.borderColor = "var(--border)")}
-                placeholder="admin"
-              />
+          {/* Form */}
+          <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            <div className="field">
+              <label className="label field-label">Username</label>
+              <input className="input" type="text" autoComplete="username"
+                placeholder="admin" value={form.username} autoFocus
+                onChange={(e) => setForm({ ...form, username:e.target.value })} />
             </div>
-
-            <div>
-              <label className="block text-xs uppercase tracking-widest mb-2"
-                     style={{ color: "var(--text-muted)" }}>
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={show ? "text" : "password"}
-                  autoComplete="current-password"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full px-4 py-2.5 pr-10 rounded-lg text-sm mono outline-none transition-all"
-                  style={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    color: "var(--text)",
-                  }}
-                  onFocus={(e) => (e.target.style.borderColor = "var(--cyan)")}
-                  onBlur={(e)  => (e.target.style.borderColor = "var(--border)")}
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShow(!show)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {show ? <EyeOff size={14} /> : <Eye size={14} />}
+            <div className="field">
+              <label className="label field-label">Password</label>
+              <div style={{ position:"relative" }}>
+                <input className="input" type={show?"text":"password"} autoComplete="current-password"
+                  placeholder="••••••••" value={form.password} style={{ paddingRight:40 }}
+                  onChange={(e) => setForm({ ...form, password:e.target.value })} />
+                <button type="button" className="btn-icon"
+                  style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", border:"none" }}
+                  onClick={() => setShow(!show)}>
+                  {show ? <EyeOff size={14}/> : <Eye size={14}/>}
                 </button>
               </div>
             </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 rounded-lg font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50 mt-2"
-              style={{
-                background: loading
-                  ? "var(--border)"
-                  : "linear-gradient(135deg, var(--cyan), var(--violet))",
-                color: "#fff",
-              }}
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="40" strokeDashoffset="10" />
-                  </svg>
-                  Authenticating...
-                </span>
-              ) : "Sign In"}
+            <button type="submit" disabled={loading}
+              className="btn btn-primary btn-lg"
+              style={{ marginTop:6, width:"100%", justifyContent:"center" }}>
+              {loading ? <><div className="btn-spinner"/>Signing in…</> : "Sign in"}
             </button>
           </form>
 
-          <div className="mt-6 text-center text-xs mono" style={{ color: "var(--text-dim)" }}>
-            UniProxy v1.0 · Secure by design
+          <div style={{ marginTop:22, textAlign:"center", fontFamily:"JetBrains Mono,monospace",
+            fontSize:10, color:"var(--text-dim)", letterSpacing:".04em" }}>
+            github.com/franklin-lol/FVpn
           </div>
         </div>
       </div>

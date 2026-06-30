@@ -1,17 +1,24 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Trash2, Eye, Copy } from "lucide-react";
+import { Plus, Trash2, Eye, Copy, Check } from "lucide-react";
 import { protocolsApi, nodesApi } from "../utils/api";
 import toast from "react-hot-toast";
 
-const FORMATS = ["singbox","clash","hiddify","shadowrocket","v2rayng","base64"];
+const PROTO_COLORS = {
+  hysteria2:"#00d4ff", shadowsocks:"#f59e0b", shadowtls:"#22c55e",
+  vless:"#7c3aed", trojan:"#ef4444", tuic:"#3b82f6", wireguard:"#06b6d4", ssh:"#64748b",
+};
 
-function Modal({ title, onClose, children }) {
+function Sk({ h=14, w="100%" }) {
+  return <div className="skeleton" style={{ height:h, width:w, borderRadius:4 }} />;
+}
+
+function Modal({ title, onClose, children, wide }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:"rgba(0,0,0,0.75)"}}>
-      <div className="w-full max-w-2xl rounded-xl p-6 box-glow" style={{background:"var(--card)"}}>
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-bold mono" style={{color:"var(--cyan)"}}>{title}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">×</button>
+    <div className="overlay" onClick={(e) => e.target===e.currentTarget && onClose()}>
+      <div className={`modal${wide?" modal-wide":""}`}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+          <h2 style={{ fontFamily:"JetBrains Mono,monospace", fontWeight:700, fontSize:15, color:"var(--cyan)" }}>{title}</h2>
+          <button className="btn-icon" onClick={onClose} style={{ border:"none" }}>✕</button>
         </div>
         {children}
       </div>
@@ -19,163 +26,191 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-const inp = "w-full px-3 py-2 rounded text-sm mono outline-none focus:ring-1";
-const inpStyle = { background:"var(--surface)", border:"1px solid var(--border)", color:"var(--text)" };
-
 function Field({ label, children }) {
   return (
-    <div className="mb-3">
-      <label className="block text-xs mb-1" style={{color:"var(--text-muted)"}}>{label}</label>
+    <div className="field">
+      <label className="label field-label">{label}</label>
       {children}
     </div>
   );
 }
 
-const PROTO_COLORS = {
-  hysteria2:   "#00d4ff",
-  shadowsocks: "#f59e0b",
-  shadowtls:   "#10b981",
-  vless:       "#7c3aed",
-  trojan:      "#ef4444",
-  tuic:        "#3b82f6",
-  wireguard:   "#06b6d4",
-  ssh:         "#64748b",
-};
+function CopyButton({ text }) {
+  const [done, setDone] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(text);
+    setDone(true);
+    setTimeout(() => setDone(false), 1500);
+  };
+  return (
+    <button className="btn-icon" onClick={copy} title="Copy" style={{ color: done?"var(--success)":"var(--cyan)" }}>
+      {done ? <Check size={12}/> : <Copy size={12}/>}
+    </button>
+  );
+}
 
-function AddProtoModal({ nodes, onClose, onCreated }) {
-  const [supported, setSupported] = useState([]);
+function AddProtoModal({ nodes, supported, onClose, onCreated }) {
   const [form, setForm] = useState({ node_id:"", name:"hysteria2", port:443, config:{} });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  useEffect(() => {
-    protocolsApi.supported().then(({ data }) => setSupported(data.protocols));
-  }, []);
-
   const submit = async () => {
-    if (!form.node_id) return toast.error("Select a node");
+    if (!form.node_id) { toast.error("Select a node"); return; }
     setBusy(true);
     try {
-      await protocolsApi.create({ ...form, node_id: Number(form.node_id), port: Number(form.port) });
-      toast.success("Protocol added");
+      await protocolsApi.create({ ...form, node_id:Number(form.node_id), port:Number(form.port) });
+      toast.success("Protocol added — default parameters auto-generated");
       onCreated(); onClose();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Error");
-    } finally { setBusy(false); }
+    } catch (e) { toast.error(e.response?.data?.detail || "Error"); }
+    finally { setBusy(false); }
   };
 
   return (
     <Modal title="Add Protocol" onClose={onClose}>
       <Field label="Node">
-        <select className={inp} style={inpStyle} value={form.node_id} onChange={set("node_id")}>
+        <select className="input select" value={form.node_id} onChange={set("node_id")} autoFocus>
           <option value="">Select node…</option>
           {nodes.map((n) => <option key={n.id} value={n.id}>{n.name} ({n.host})</option>)}
         </select>
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
         <Field label="Protocol">
-          <select className={inp} style={inpStyle} value={form.name} onChange={set("name")}>
+          <select className="input select" value={form.name} onChange={set("name")}>
             {supported.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
           </select>
         </Field>
         <Field label="Port">
-          <input className={inp} style={inpStyle} type="number" value={form.port} onChange={set("port")} />
+          <input className="input" type="number" value={form.port} onChange={set("port")} />
         </Field>
       </div>
-      <p className="text-xs mb-4" style={{color:"var(--text-muted)"}}>
-        Default parameters are auto-generated. You can override them after creation.
+      <p style={{ fontSize:11, color:"var(--text-muted)", marginBottom:14, lineHeight:1.6 }}>
+        Passwords, UUIDs, and keys are auto-generated. Edit individual values after creation if needed.
       </p>
-      <button onClick={submit} disabled={busy}
-        className="w-full py-2 rounded font-semibold text-sm hover:opacity-90"
-        style={{background:"linear-gradient(135deg,var(--cyan),var(--violet))",color:"#fff"}}>
-        {busy ? "Adding..." : "Add Protocol"}
+      <button className="btn btn-primary" style={{ width:"100%", justifyContent:"center" }} onClick={submit} disabled={busy}>
+        {busy ? <><div className="btn-spinner"/>Adding…</> : "Add Protocol"}
       </button>
     </Modal>
   );
 }
 
 function PreviewModal({ onClose }) {
-  const [nodes, setNodes] = useState([]);
   const [form, setForm] = useState({ protocol:"hysteria2", host:"1.2.3.4", port:443, format:"singbox", config:{} });
   const [result, setResult] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [busy,   setBusy]   = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
-  useEffect(() => {
-    nodesApi.list().then(({ data }) => setNodes(data));
-  }, []);
-
-  const preview = async () => {
+  const run = async () => {
     setBusy(true);
     try {
-      const { data } = await protocolsApi.preview(form);
+      const { data } = await protocolsApi.preview({ ...form, port:Number(form.port) });
       setResult(data.config);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Preview failed");
-    } finally { setBusy(false); }
+    } catch (e) { toast.error(e.response?.data?.detail || "Preview failed"); }
+    finally { setBusy(false); }
   };
 
   return (
-    <Modal title="Config Preview" onClose={onClose}>
-      <div className="grid grid-cols-3 gap-3 mb-3">
+    <Modal title="Config Preview" onClose={onClose} wide>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
         <Field label="Protocol">
-          <select className={inp} style={inpStyle} value={form.protocol} onChange={set("protocol")}>
-            {["hysteria2","shadowsocks","vless","trojan","tuic","wireguard"].map((p) =>
-              <option key={p} value={p}>{p}</option>)}
+          <select className="input select" value={form.protocol} onChange={set("protocol")}>
+            {["hysteria2","shadowsocks","vless","trojan","tuic","wireguard"].map((p)=><option key={p} value={p}>{p}</option>)}
           </select>
         </Field>
         <Field label="Host">
-          <input className={inp} style={inpStyle} value={form.host} onChange={set("host")} />
+          <input className="input" value={form.host} onChange={set("host")} placeholder="1.2.3.4" />
         </Field>
         <Field label="Port">
-          <input className={inp} style={inpStyle} type="number" value={form.port} onChange={set("port")} />
+          <input className="input" type="number" value={form.port} onChange={set("port")} />
         </Field>
       </div>
       <Field label="Output Format">
-        <select className={inp} style={inpStyle} value={form.format} onChange={set("format")}>
-          {FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+        <select className="input select" value={form.format} onChange={set("format")}>
+          {["singbox","clash","hiddify","shadowrocket","v2rayng","base64"].map((f)=><option key={f} value={f}>{f}</option>)}
         </select>
       </Field>
-      <button onClick={preview} disabled={busy}
-        className="w-full py-2 rounded text-sm font-semibold mb-4 hover:opacity-90"
-        style={{background:"var(--surface)",border:"1px solid var(--cyan)",color:"var(--cyan)"}}>
-        {busy ? "Generating..." : "Generate Preview"}
+      <button className="btn btn-ghost" style={{ width:"100%", justifyContent:"center", marginBottom:12 }} onClick={run} disabled={busy}>
+        {busy ? <><div className="btn-spinner"/>Generating…</> : <><Eye size={13}/>Generate Preview</>}
       </button>
       {result && (
-        <div className="relative">
-          <pre className="p-3 rounded text-xs overflow-auto max-h-64 mono"
-               style={{background:"var(--surface)",color:"var(--text)",border:"1px solid var(--border)"}}>
-            {result.length > 2000 ? result.slice(0,2000)+"..." : result}
+        <div style={{ position:"relative" }}>
+          <pre style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8,
+            padding:12, fontSize:11, overflow:"auto", maxHeight:260, fontFamily:"JetBrains Mono,monospace",
+            color:"var(--text)", lineHeight:1.5 }}>
+            {result.length > 2000 ? result.slice(0,2000)+"…" : result}
           </pre>
-          <button
-            onClick={() => { navigator.clipboard.writeText(result); toast.success("Copied!"); }}
-            className="absolute top-2 right-2 p-1.5 rounded hover:bg-white/20"
-            style={{color:"var(--cyan)"}}>
-            <Copy size={12} />
-          </button>
+          <div style={{ position:"absolute", top:8, right:8 }}>
+            <CopyButton text={result}/>
+          </div>
         </div>
       )}
     </Modal>
   );
 }
 
+function ProtoCard({ proto, nodeMap, onDelete }) {
+  const color = PROTO_COLORS[proto.name] || "var(--text-muted)";
+  const node  = nodeMap[proto.node_id];
+  const secret = ["private_key","ssh_key","preshared_key"];
+
+  return (
+    <div className="card fade-in" style={{ padding:18 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ width:10, height:10, borderRadius:"50%", background:color, boxShadow:`0 0 6px ${color}` }}/>
+          <span className="mono" style={{ fontWeight:700, fontSize:14, color }}>{proto.name}</span>
+          <span style={{ fontSize:12, color:"var(--text-muted)" }}>:{proto.port}</span>
+        </div>
+        <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+          <span className={`badge badge-${proto.is_active?"green":"red"}`} style={{ fontSize:10 }}>
+            {proto.is_active?"active":"disabled"}
+          </span>
+          <button className="btn-icon" onClick={() => onDelete(proto.id)} style={{ color:"var(--danger)" }}>
+            <Trash2 size={12}/>
+          </button>
+        </div>
+      </div>
+
+      {node && (
+        <div style={{ fontSize:11, color:"var(--text-muted)", background:"var(--surface)",
+          border:"1px solid var(--border)", borderRadius:6, padding:"5px 8px", marginBottom:10,
+          fontFamily:"JetBrains Mono,monospace" }}>
+          → {node.name} <span style={{ opacity:.5 }}>({node.host})</span>
+        </div>
+      )}
+
+      <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+        {Object.entries(proto.config)
+          .filter(([k]) => !secret.includes(k))
+          .slice(0, 6)
+          .map(([k, v]) => (
+            <div key={k} style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
+              <span style={{ fontSize:11, color:"var(--text-muted)", flexShrink:0 }}>{k}</span>
+              <span className="mono truncate" style={{ fontSize:11, color:"var(--text)", maxWidth:160 }} title={String(v)}>
+                {String(v).length > 20 ? String(v).slice(0,20)+"…" : String(v)}
+              </span>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Protocols() {
-  const [protocols, setProtocols] = useState([]);
+  const [protos,    setProtos]    = useState([]);
   const [nodes,     setNodes]     = useState([]);
+  const [supported, setSupported] = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [addOpen,   setAddOpen]   = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [prevOpen,  setPrevOpen]  = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: protos }, { data: nds }] = await Promise.all([
-        protocolsApi.list(),
-        nodesApi.list(),
+      const [{ data:p }, { data:n }, { data:s }] = await Promise.all([
+        protocolsApi.list(), nodesApi.list(), protocolsApi.supported(),
       ]);
-      setProtocols(protos);
-      setNodes(nds);
-    } catch { toast.error("Load failed"); }
+      setProtos(p); setNodes(n); setSupported(s.protocols || []);
+    } catch { toast.error("Failed to load"); }
     finally { setLoading(false); }
   }, []);
 
@@ -189,83 +224,49 @@ export default function Protocols() {
   const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="page">
+      <div className="page-header">
         <div>
-          <h1 className="text-xl font-bold mono" style={{color:"var(--cyan)"}}>Protocols</h1>
-          <p className="text-xs mt-1" style={{color:"var(--text-muted)"}}>{protocols.length} configured</p>
+          <div className="page-title">Protocols</div>
+          <div className="page-sub">{protos.length} configured</div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setPreviewOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors hover:bg-white/10"
-            style={{border:"1px solid var(--border)",color:"var(--cyan)"}}>
-            <Eye size={13} /> Preview Config
+        <div style={{ display:"flex", gap:8 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setPrevOpen(true)}>
+            <Eye size={12}/>Preview Config
           </button>
-          <button onClick={() => setAddOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm font-semibold hover:opacity-90"
-            style={{background:"linear-gradient(135deg,var(--cyan),var(--violet))",color:"#fff"}}>
-            <Plus size={14} /> Add Protocol
+          <button className="btn btn-primary btn-sm" onClick={() => setAddOpen(true)}>
+            <Plus size={13}/>Add Protocol
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-16" style={{color:"var(--text-muted)"}}>Loading...</div>
-      ) : protocols.length === 0 ? (
-        <div className="text-center py-16">
-          <p style={{color:"var(--text-muted)"}}>No protocols configured yet.</p>
-          <p className="text-xs mt-2" style={{color:"var(--text-dim)"}}>Add a node first, then attach protocols to it.</p>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:12 }}>
+          {[1,2,3].map((k) => (
+            <div key={k} className="card" style={{ padding:18 }}>
+              <Sk h={14} w="50%"/><Sk h={10} w="70%" style={{ marginTop:8 }}/><Sk h={10} w="60%" style={{ marginTop:6 }}/>
+            </div>
+          ))}
+        </div>
+      ) : protos.length === 0 ? (
+        <div className="empty">
+          <div className="empty-icon"><span style={{ fontSize:20 }}>🔒</span></div>
+          <h3>No protocols configured</h3>
+          <p>Add a node first, then attach proxy protocols to it</p>
+          <button className="btn btn-primary btn-sm" onClick={() => setAddOpen(true)} style={{ marginTop:8 }}>
+            <Plus size={13}/>Add Protocol
+          </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {protocols.map((p) => {
-            const color = PROTO_COLORS[p.name] || "var(--text-muted)";
-            const node  = nodeMap[p.node_id];
-            return (
-              <div key={p.id} className="rounded-lg p-4 box-glow" style={{background:"var(--card)"}}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{background:color}} />
-                    <span className="font-bold mono text-sm" style={{color}}>{p.name}</span>
-                    <span className="text-xs" style={{color:"var(--text-muted)"}}>:{p.port}</span>
-                  </div>
-                  <div className="flex gap-1">
-                    <span className={`dot-${p.is_active ? "online" : "offline"}`} />
-                    <button onClick={() => del(p.id)}
-                      className="p-1 rounded hover:bg-white/10" style={{color:"var(--danger)"}}>
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </div>
-
-                {node && (
-                  <div className="text-xs mb-3 px-2 py-1 rounded" style={{background:"var(--surface)",color:"var(--text-muted)"}}>
-                    → {node.name} ({node.host})
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  {Object.entries(p.config)
-                    .filter(([k]) => !["private_key","ssh_key"].includes(k))
-                    .slice(0, 5)
-                    .map(([k, v]) => (
-                      <div key={k} className="flex justify-between text-xs">
-                        <span style={{color:"var(--text-muted)"}}>{k}</span>
-                        <span className="mono truncate ml-2" style={{color:"var(--text)",maxWidth:120}} title={String(v)}>
-                          {String(v).length > 18 ? String(v).slice(0,18)+"…" : String(v)}
-                        </span>
-                      </div>
-                    ))
-                  }
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:12 }}>
+          {protos.map((p) => (
+            <ProtoCard key={p.id} proto={p} nodeMap={nodeMap} onDelete={del}/>
+          ))}
         </div>
       )}
 
-      {addOpen     && <AddProtoModal  nodes={nodes} onClose={() => setAddOpen(false)}   onCreated={load} />}
-      {previewOpen && <PreviewModal               onClose={() => setPreviewOpen(false)} />}
+      {addOpen  && <AddProtoModal nodes={nodes} supported={supported} onClose={() => setAddOpen(false)} onCreated={load}/>}
+      {prevOpen && <PreviewModal onClose={() => setPrevOpen(false)}/>}
     </div>
   );
 }

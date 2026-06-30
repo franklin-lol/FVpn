@@ -7,13 +7,17 @@ import dayjs from "dayjs";
 
 const FORMATS = ["singbox","clash","hiddify","shadowrocket","v2rayng","base64"];
 
-function Modal({ title, onClose, children }) {
+function Sk({ h=14, w="100%", style={} }) {
+  return <div className="skeleton" style={{ height:h, width:w, borderRadius:4, ...style }} />;
+}
+
+function Modal({ title, onClose, children, wide }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:"rgba(0,0,0,0.75)"}}>
-      <div className="w-full max-w-lg rounded-xl p-6 box-glow" style={{background:"var(--card)"}}>
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-bold mono" style={{color:"var(--cyan)"}}>{title}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">×</button>
+    <div className="overlay" onClick={(e) => e.target===e.currentTarget && onClose()}>
+      <div className={`modal${wide?" modal-wide":""}`}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+          <h2 style={{ fontFamily:"JetBrains Mono,monospace", fontWeight:700, fontSize:15, color:"var(--cyan)" }}>{title}</h2>
+          <button className="btn-icon" onClick={onClose} style={{ border:"none" }}>✕</button>
         </div>
         {children}
       </div>
@@ -21,76 +25,83 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-const inp = "w-full px-3 py-2 rounded text-sm mono outline-none focus:ring-1";
-const inpStyle = { background:"var(--surface)", border:"1px solid var(--border)", color:"var(--text)" };
-
 function Field({ label, children }) {
   return (
-    <div className="mb-3">
-      <label className="block text-xs mb-1" style={{color:"var(--text-muted)"}}>{label}</label>
+    <div className="field">
+      <label className="label field-label">{label}</label>
       {children}
     </div>
   );
 }
 
+function TrafficBar({ used, limit }) {
+  if (limit === 0) return <span className="badge badge-cyan">Unlimited</span>;
+  const pct = Math.min((used / limit) * 100, 100);
+  const color = pct > 90 ? "var(--danger)" : pct > 70 ? "var(--warn)" : "var(--success)";
+  return (
+    <div style={{ minWidth:100 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, marginBottom:3 }}>
+        <span className="mono" style={{ color }}>{used.toFixed(1)}</span>
+        <span style={{ color:"var(--text-muted)" }}>{limit} GB</span>
+      </div>
+      <div className="gauge-track">
+        <div className="gauge-fill" style={{ width:`${pct}%`, background:color }} />
+      </div>
+    </div>
+  );
+}
+
 function AddUserModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({
-    username:"", password:"", email:"", traffic_limit_gb:0, expire_at:""
-  });
+  const [form, setForm] = useState({ username:"", password:"", email:"", traffic_limit_gb:0, expire_at:"" });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   const submit = async () => {
-    if (!form.username || !form.password) return toast.error("Username and password required");
+    if (!form.username || !form.password) { toast.error("Username and password required"); return; }
     setBusy(true);
     try {
-      const payload = {
+      await usersApi.create({
         ...form,
         traffic_limit_gb: parseFloat(form.traffic_limit_gb) || 0,
         expire_at: form.expire_at || null,
-      };
-      await usersApi.create(payload);
+      });
       toast.success("User created");
       onCreated(); onClose();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Error");
-    } finally { setBusy(false); }
+    } catch (e) { toast.error(e.response?.data?.detail || "Error"); }
+    finally { setBusy(false); }
   };
 
   return (
     <Modal title="Create User" onClose={onClose}>
       <Field label="Username">
-        <input className={inp} style={inpStyle} value={form.username} onChange={set("username")} placeholder="john_doe" />
+        <input className="input" value={form.username} onChange={set("username")} placeholder="john_doe" autoFocus />
       </Field>
       <Field label="Password">
-        <input className={inp} style={inpStyle} type="password" value={form.password} onChange={set("password")} />
+        <input className="input" type="password" value={form.password} onChange={set("password")} placeholder="••••••••" />
       </Field>
       <Field label="Email (optional)">
-        <input className={inp} style={inpStyle} type="email" value={form.email} onChange={set("email")} />
+        <input className="input" type="email" value={form.email} onChange={set("email")} placeholder="user@example.com" />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Traffic Limit (GB, 0=∞)">
-          <input className={inp} style={inpStyle} type="number" min="0" value={form.traffic_limit_gb}
-                 onChange={set("traffic_limit_gb")} />
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <Field label="Traffic Limit GB (0=∞)">
+          <input className="input" type="number" min="0" value={form.traffic_limit_gb} onChange={set("traffic_limit_gb")} />
         </Field>
-        <Field label="Expire Date">
-          <input className={inp} style={inpStyle} type="date" value={form.expire_at} onChange={set("expire_at")} />
+        <Field label="Expires">
+          <input className="input" type="date" value={form.expire_at} onChange={set("expire_at")} />
         </Field>
       </div>
-      <button onClick={submit} disabled={busy}
-        className="w-full mt-2 py-2 rounded font-semibold text-sm hover:opacity-90"
-        style={{background:"linear-gradient(135deg,var(--cyan),var(--violet))",color:"#fff"}}>
-        {busy ? "Creating..." : "Create User"}
+      <button className="btn btn-primary" style={{ width:"100%", justifyContent:"center", marginTop:4 }} onClick={submit} disabled={busy}>
+        {busy ? <><div className="btn-spinner"/>Creating…</> : "Create User"}
       </button>
     </Modal>
   );
 }
 
 function SubModal({ user, onClose }) {
-  const [subs, setSubs] = useState([]);
-  const [fmt,  setFmt]  = useState("singbox");
-  const [qrSub, setQrSub] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [subs, setSubs]   = useState([]);
+  const [fmt,  setFmt]    = useState("singbox");
+  const [qrId, setQrId]   = useState(null);
+  const [busy, setBusy]   = useState(false);
 
   const loadSubs = useCallback(async () => {
     try {
@@ -103,13 +114,9 @@ function SubModal({ user, onClose }) {
 
   const create = async () => {
     setBusy(true);
-    try {
-      await subsApi.create({ format: fmt });
-      toast.success("Subscription created");
-      loadSubs();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Error");
-    } finally { setBusy(false); }
+    try { await subsApi.create({ format: fmt }); toast.success("Subscription created"); loadSubs(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Error"); }
+    finally { setBusy(false); }
   };
 
   const del = async (id) => {
@@ -119,78 +126,55 @@ function SubModal({ user, onClose }) {
 
   return (
     <Modal title={`Subscriptions — ${user.username}`} onClose={onClose}>
-      {/* Create new */}
-      <div className="flex gap-2 mb-4">
-        <select className={inp} style={inpStyle} value={fmt} onChange={(e) => setFmt(e.target.value)}>
+      <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+        <select className="input select" style={{ flex:1 }} value={fmt} onChange={(e) => setFmt(e.target.value)}>
           {FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
         </select>
-        <button onClick={create} disabled={busy}
-          className="px-4 py-2 rounded text-sm font-semibold flex-shrink-0 hover:opacity-90"
-          style={{background:"var(--cyan)",color:"#000"}}>
-          + New
+        <button className="btn btn-primary btn-sm" onClick={create} disabled={busy}>
+          {busy ? <div className="btn-spinner"/> : "+ New"}
         </button>
       </div>
 
-      {/* List */}
-      <div className="space-y-3 max-h-64 overflow-y-auto">
-        {subs.map((s) => (
-          <div key={s.id} className="rounded-lg p-3" style={{background:"var(--surface)",border:"1px solid var(--border)"}}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs px-2 py-0.5 rounded mono"
-                    style={{background:"var(--violet)20",color:"var(--violet)"}}>
-                {s.format}
-              </span>
-              <div className="flex gap-2">
-                <button onClick={() => { navigator.clipboard.writeText(s.url); toast.success("Copied!"); }}
-                  className="p-1.5 rounded hover:bg-white/10" style={{color:"var(--cyan)"}}>
-                  <Link size={12} />
+      <div style={{ display:"flex", flexDirection:"column", gap:8, maxHeight:320, overflow:"auto" }} className="no-scrollbar">
+        {subs.length === 0 ? (
+          <div className="empty" style={{ padding:"20px 0" }}>
+            <p>No subscriptions yet</p>
+          </div>
+        ) : subs.map((s) => (
+          <div key={s.id} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:12 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+              <span className="badge badge-violet">{s.format}</span>
+              <div style={{ display:"flex", gap:4 }}>
+                <button className="btn-icon" title="Copy URL"
+                  onClick={() => { navigator.clipboard.writeText(s.url); toast.success("Copied!"); }}
+                  style={{ color:"var(--cyan)" }}>
+                  <Link size={12}/>
                 </button>
-                <button onClick={() => setQrSub(qrSub?.id === s.id ? null : s)}
-                  className="p-1.5 rounded hover:bg-white/10" style={{color:"var(--success)"}}>
-                  <QrCode size={12} />
+                <button className="btn-icon" title="QR Code"
+                  onClick={() => setQrId(qrId === s.id ? null : s.id)}
+                  style={{ color:"var(--success)" }}>
+                  <QrCode size={12}/>
                 </button>
-                <button onClick={() => del(s.id)} className="p-1.5 rounded hover:bg-white/10" style={{color:"var(--danger)"}}>
-                  <Trash2 size={12} />
+                <button className="btn-icon" title="Delete" onClick={() => del(s.id)} style={{ color:"var(--danger)" }}>
+                  <Trash2 size={12}/>
                 </button>
               </div>
             </div>
-            <div className="text-xs mono truncate" style={{color:"var(--text-muted)"}}>{s.url}</div>
-            {qrSub?.id === s.id && (
-              <div className="flex justify-center mt-3 p-3 rounded" style={{background:"#fff"}}>
-                <QRCode value={s.url} size={140} />
+            <div className="mono truncate" style={{ fontSize:11, color:"var(--text-muted)" }}>{s.url}</div>
+            {qrId === s.id && (
+              <div style={{ display:"flex", justifyContent:"center", marginTop:10, padding:12, background:"#fff", borderRadius:8 }}>
+                <QRCode value={s.url} size={140}/>
               </div>
             )}
           </div>
         ))}
-        {!subs.length && (
-          <div className="text-center py-6 text-sm" style={{color:"var(--text-muted)"}}>
-            No subscriptions yet
-          </div>
-        )}
       </div>
     </Modal>
   );
 }
 
-function TrafficBar({ used, limit }) {
-  if (limit === 0) return <span className="text-xs" style={{color:"var(--success)"}}>Unlimited</span>;
-  const pct = Math.min((used / limit) * 100, 100);
-  const color = pct > 90 ? "var(--danger)" : pct > 70 ? "var(--warn)" : "var(--success)";
-  return (
-    <div className="w-24">
-      <div className="flex justify-between text-xs mb-0.5">
-        <span style={{color}}>{used.toFixed(1)}</span>
-        <span style={{color:"var(--text-muted)"}}>{limit}GB</span>
-      </div>
-      <div className="h-1 rounded-full" style={{background:"var(--border)"}}>
-        <div className="h-full rounded-full" style={{width:`${pct}%`,background:color}} />
-      </div>
-    </div>
-  );
-}
-
 export default function Users() {
-  const [users, setUsers]   = useState([]);
+  const [users,   setUsers]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [subUser, setSubUser] = useState(null);
@@ -210,111 +194,111 @@ export default function Users() {
     catch { toast.error("Delete failed"); }
   };
 
-  const toggleActive = async (user) => {
-    try {
-      await usersApi.update(user.id, { is_active: !user.is_active });
-      load();
-    } catch { toast.error("Update failed"); }
+  const toggle = async (u) => {
+    try { await usersApi.update(u.id, { is_active: !u.is_active }); load(); }
+    catch { toast.error("Update failed"); }
   };
 
-  const resetTraffic = async (id) => {
+  const reset = async (id) => {
     try { await usersApi.resetTraffic(id); toast.success("Traffic reset"); load(); }
     catch { toast.error("Reset failed"); }
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="page">
+      <div className="page-header">
         <div>
-          <h1 className="text-xl font-bold mono" style={{color:"var(--cyan)"}}>Users</h1>
-          <p className="text-xs mt-1" style={{color:"var(--text-muted)"}}>{users.length} accounts</p>
+          <div className="page-title">Users</div>
+          <div className="page-sub">{users.length} account{users.length !== 1 ? "s" : ""}</div>
         </div>
-        <button onClick={() => setAddOpen(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded text-sm font-semibold hover:opacity-90"
-          style={{background:"linear-gradient(135deg,var(--cyan),var(--violet))",color:"#fff"}}>
-          <Plus size={14} /> Create User
+        <button className="btn btn-primary btn-sm" onClick={() => setAddOpen(true)}>
+          <Plus size={13}/>Create User
         </button>
       </div>
 
       {loading ? (
-        <div className="text-center py-16" style={{color:"var(--text-muted)"}}>Loading...</div>
-      ) : (
-        <div className="rounded-lg box-glow overflow-hidden" style={{background:"var(--card)"}}>
-          <table className="w-full text-sm">
+        <div className="table-wrap">
+          <table className="table">
             <thead>
-              <tr style={{borderBottom:"1px solid var(--border)"}}>
-                {["User","Status","Traffic","Expires","Subscriptions","Actions"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs uppercase tracking-widest"
-                      style={{color:"var(--text-muted)"}}>{h}</th>
-                ))}
-              </tr>
+              <tr>{["User","Status","Traffic","Expires","",""].map((h,i)=><th key={i}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-b transition-colors hover:bg-white/5"
-                    style={{borderColor:"var(--border)"}}>
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{u.username}</div>
-                    {u.email && <div className="text-xs" style={{color:"var(--text-muted)"}}>{u.email}</div>}
-                    {u.is_admin && (
-                      <span className="text-xs px-1.5 rounded" style={{background:"var(--violet)20",color:"var(--violet)"}}>
-                        admin
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`dot-${u.is_active && !u.is_expired ? "online" : "offline"}`} />
-                      <span className="text-xs" style={{color:u.is_active && !u.is_expired ? "var(--success)" : "var(--danger)"}}>
-                        {!u.is_active ? "Disabled" : u.is_expired ? "Expired" : "Active"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <TrafficBar used={u.traffic_used_gb} limit={u.traffic_limit_gb} />
-                  </td>
-                  <td className="px-4 py-3 text-xs mono" style={{color:"var(--text-muted)"}}>
-                    {u.expire_at ? dayjs(u.expire_at).format("YYYY-MM-DD") : "Never"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button onClick={() => setSubUser(u)}
-                      className="flex items-center gap-1 text-xs px-2 py-1 rounded hover:opacity-80"
-                      style={{background:"var(--cyan)20",color:"var(--cyan)"}}>
-                      <Link size={11} /> Sub
-                    </button>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => toggleActive(u)}
-                        className="p-1.5 rounded hover:bg-white/10"
-                        title={u.is_active ? "Disable" : "Enable"}
-                        style={{color: u.is_active ? "var(--warn)" : "var(--success)"}}>
-                        {u.is_active ? <Ban size={13} /> : <CheckCircle2 size={13} />}
-                      </button>
-                      <button onClick={() => resetTraffic(u.id)}
-                        className="p-1.5 rounded hover:bg-white/10" title="Reset traffic"
-                        style={{color:"var(--cyan)"}}>
-                        <RefreshCw size={13} />
-                      </button>
-                      <button onClick={() => del(u.id)}
-                        className="p-1.5 rounded hover:bg-white/10" title="Delete"
-                        style={{color:"var(--danger)"}}>
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+              {[1,2,3].map((k)=>(
+                <tr key={k}><td colSpan={6} style={{ padding:12 }}><Sk h={12}/></td></tr>
               ))}
             </tbody>
           </table>
-          {!users.length && (
-            <div className="text-center py-12 text-sm" style={{color:"var(--text-muted)"}}>No users</div>
-          )}
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>User</th><th>Status</th><th>Traffic</th>
+                <th>Expires</th><th>Sub</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.length === 0 ? (
+                <tr><td colSpan={6}>
+                  <div className="empty" style={{ padding:"28px 0" }}>
+                    <h3>No users yet</h3>
+                    <p>Create your first user to generate subscription links</p>
+                    <button className="btn btn-primary btn-sm" onClick={() => setAddOpen(true)} style={{ marginTop:8 }}>
+                      <Plus size={13}/>Create User
+                    </button>
+                  </div>
+                </td></tr>
+              ) : users.map((u) => {
+                const active = u.is_active && !u.is_expired;
+                return (
+                  <tr key={u.id}>
+                    <td>
+                      <div style={{ fontWeight:600 }}>{u.username}</div>
+                      {u.email && <div style={{ fontSize:11, color:"var(--text-muted)" }}>{u.email}</div>}
+                      {u.is_admin && <span className="badge badge-violet" style={{ marginTop:2 }}>admin</span>}
+                    </td>
+                    <td>
+                      <span className={`badge badge-${active?"green":"red"}`}>
+                        <span className={`dot dot-${active?"online":"offline"}`} style={{width:5,height:5}}/>
+                        {!u.is_active ? "Disabled" : u.is_expired ? "Expired" : "Active"}
+                      </span>
+                    </td>
+                    <td><TrafficBar used={u.traffic_used_gb} limit={u.traffic_limit_gb}/></td>
+                    <td>
+                      <span className="mono" style={{ fontSize:12, color:"var(--text-muted)" }}>
+                        {u.expire_at ? dayjs(u.expire_at).format("YYYY-MM-DD") : "Never"}
+                      </span>
+                    </td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setSubUser(u)}>
+                        <Link size={11}/>Links
+                      </button>
+                    </td>
+                    <td>
+                      <div style={{ display:"flex", gap:4 }}>
+                        <button className="btn-icon" onClick={() => toggle(u)} title={u.is_active?"Disable":"Enable"}
+                          style={{ color: u.is_active?"var(--warn)":"var(--success)" }}>
+                          {u.is_active ? <Ban size={13}/> : <CheckCircle2 size={13}/>}
+                        </button>
+                        <button className="btn-icon" onClick={() => reset(u.id)} title="Reset traffic" style={{ color:"var(--cyan)" }}>
+                          <RefreshCw size={13}/>
+                        </button>
+                        <button className="btn-icon" onClick={() => del(u.id)} title="Delete" style={{ color:"var(--danger)" }}>
+                          <Trash2 size={13}/>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {addOpen  && <AddUserModal onClose={() => setAddOpen(false)} onCreated={load} />}
-      {subUser  && <SubModal user={subUser} onClose={() => setSubUser(null)} />}
+      {addOpen && <AddUserModal onClose={() => setAddOpen(false)} onCreated={load}/>}
+      {subUser  && <SubModal user={subUser} onClose={() => setSubUser(null)}/>}
     </div>
   );
 }

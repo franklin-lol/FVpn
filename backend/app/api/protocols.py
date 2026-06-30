@@ -41,20 +41,19 @@ class ConfigPreviewRequest(BaseModel):
 
 
 async def _sync_node(node_id: int):
-    """Background task: rebuild Xray/Sing-box server configs after protocol change."""
     try:
         from app.core.config_writer import sync_node_config
         result = await sync_node_config(node_id)
         import logging
         logging.getLogger("fvpn.protocols").info(
-            f"Node {node_id} config sync: xray={result['xray']} singbox={result['singbox']}"
+            f"Node {node_id} sync: xray={result['xray']} singbox={result['singbox']}"
         )
     except Exception as e:
         import logging
         logging.getLogger("fvpn.protocols").error(f"Config sync failed for node {node_id}: {e}")
 
 
-@router.get("/", response_model=list[ProtocolOut])
+@router.get("", response_model=list[ProtocolOut])
 async def list_protocols(
     node_id: Optional[int] = None,
     _: User = Depends(require_admin),
@@ -67,7 +66,7 @@ async def list_protocols(
     return result.scalars().all()
 
 
-@router.post("/", response_model=ProtocolOut, status_code=201)
+@router.post("", response_model=ProtocolOut, status_code=201)
 async def create_protocol(
     data: ProtocolCreate,
     bg: BackgroundTasks,
@@ -83,8 +82,6 @@ async def create_protocol(
     db.add(proto)
     await db.commit()
     await db.refresh(proto)
-
-    # Rebuild server-side Xray/Sing-box configs in background
     bg.add_task(_sync_node, data.node_id)
     return proto
 
@@ -132,7 +129,6 @@ async def preview_config(
     req: ConfigPreviewRequest,
     _: User = Depends(require_admin),
 ):
-    """Live config preview — no DB write, no server reload."""
     gen = ConfigGenerator(domain=settings.DOMAIN)
     cfg = ProtocolConfig.defaults(req.protocol, req.port, req.config)
     gen.add_protocol(req.protocol, req.host, req.port, tag=f"{req.protocol}-preview", **cfg)
@@ -150,7 +146,6 @@ async def force_sync(
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Manually trigger server config rebuild for a node."""
     node_res = await db.execute(select(Node).where(Node.id == node_id))
     if not node_res.scalar_one_or_none():
         raise HTTPException(404, "Node not found")

@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "/",
+  baseURL: "",
   timeout: 30000,
 });
 
@@ -9,7 +9,7 @@ api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem("uniproxy-auth");
+      localStorage.removeItem("fvpn-auth");
       window.location.href = "/login";
     }
     return Promise.reject(err);
@@ -18,7 +18,9 @@ api.interceptors.response.use(
 
 export default api;
 
-// Convenience wrappers
+// IMPORTANT: no trailing slashes — backend routes use "" not "/"
+// (FastAPI redirect_slashes=False means /api/nodes and /api/nodes/ are NOT equivalent)
+
 export const nodesApi = {
   list:      ()         => api.get("/api/nodes"),
   create:    (d)        => api.post("/api/nodes", d),
@@ -52,7 +54,7 @@ export const subsApi = {
 };
 
 export const statsApi = {
-  dashboard: () => api.get("/api/stats/dashboard"),
-  system:    () => api.get("/api/stats/system"),
-  nodeHistory:(id, days=7) => api.get(`/api/stats/nodes/${id}/history?days=${days}`),
+  dashboard:   ()        => api.get("/api/stats/dashboard"),
+  system:      ()        => api.get("/api/stats/system"),
+  nodeHistory: (id, days=7) => api.get(`/api/stats/nodes/${id}/history?days=${days}`),
 };

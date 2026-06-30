@@ -24,9 +24,7 @@ function WSFeed() {
     if (!token) return;
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${window.location.host}/ws/stats?token=${token}`);
-    ws.onmessage = (e) => {
-      try { setLive(JSON.parse(e.data)); } catch {}
-    };
+    ws.onmessage = (e) => { try { setLive(JSON.parse(e.data)); } catch {} };
     ws.onerror = () => {};
     const ping = setInterval(() => ws.readyState === 1 && ws.send("ping"), 15000);
     return () => { clearInterval(ping); ws.close(); };
@@ -45,9 +43,9 @@ export default function App() {
       <Toaster
         position="top-right"
         toastOptions={{
-          style: { background: "#1a2340", color: "#e2e8f0", border: "1px solid #243050" },
-          success: { iconTheme: { primary: "#10b981", secondary: "#0a0e1a" } },
-          error:   { iconTheme: { primary: "#ef4444", secondary: "#0a0e1a" } },
+          style: { background:"#111827", color:"#e2e8f0", border:"1px solid #1e2d44", fontSize:13 },
+          success: { iconTheme: { primary:"#22c55e", secondary:"#080c14" } },
+          error:   { iconTheme: { primary:"#ef4444", secondary:"#080c14" } },
         }}
       />
       <Routes>

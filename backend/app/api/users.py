@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import select, func
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -50,7 +50,8 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/", response_model=list[UserOut])
+# "" instead of "/" — with redirect_slashes=False, "/" creates /api/users/ (not /api/users)
+@router.get("", response_model=list[UserOut])
 async def list_users(
     skip: int = 0, limit: int = 100,
     _: User = Depends(require_admin),
@@ -60,7 +61,7 @@ async def list_users(
     return result.scalars().all()
 
 
-@router.post("/", response_model=UserOut, status_code=201)
+@router.post("", response_model=UserOut, status_code=201)
 async def create_user(
     data: UserCreate,
     _: User = Depends(require_admin),
