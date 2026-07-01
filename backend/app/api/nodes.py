@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Node, Protocol
+from backend.app import Node, Protocol
 from app.api.auth import require_admin, User
 from app.core.ssh import SSHClient
 from app.config import settings

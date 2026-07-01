@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Protocol, Node
+from backend.app import Protocol, Node
 from app.api.auth import require_admin, User
 from app.lib.config_generator import ConfigGenerator, Balancer, ProtocolConfig
 from app.config import settings

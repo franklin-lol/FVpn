@@ -37,7 +37,7 @@ class SelfHealService:
 
     async def _cycle(self):
         from app.database import SessionLocal
-        from app.models import Node, EventLog
+        from backend.app import Node, EventLog
         from sqlalchemy import select
 
         async with SessionLocal() as db:
@@ -64,7 +64,7 @@ class SelfHealService:
 
     async def _check_node(self, node) -> bool:
         from app.database import SessionLocal
-        from app.models import Node, EventLog
+        from backend.app import Node, EventLog
         from sqlalchemy import select
         import time
 

@@ -34,7 +34,7 @@ class MonitorService:
         net = psutil.net_io_counters()
 
         from app.database import SessionLocal
-        from app.models import Node, User
+        from backend.app import Node, User
         from sqlalchemy import select, func
 
         async with SessionLocal() as db:

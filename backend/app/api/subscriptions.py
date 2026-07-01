@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import User, Subscription, Node, Protocol
+from backend.app import User, Subscription, Node, Protocol
 from app.api.auth import get_current_user, require_admin
 from app.lib.config_generator import ConfigGenerator, Balancer
 from app.config import settings

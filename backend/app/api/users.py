@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import User
+from backend.app import User
 from app.core.security import hash_password
 from app.api.auth import get_current_user, require_admin
 

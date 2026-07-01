@@ -69,7 +69,7 @@ async def _seed() -> None:
     logger.info("First boot — provisioning default local node and protocols")
 
     from app.database import SessionLocal
-    from app.models import Node, Protocol
+    from backend.app import Node, Protocol
     from app.lib.config_generator import ProtocolConfig
 
     async with SessionLocal() as db:

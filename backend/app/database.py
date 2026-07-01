@@ -26,12 +26,12 @@ class Base(DeclarativeBase):
 
 async def init_db():
     """Create all tables; seed default admin; seed default local node+protocols once."""
-    import app.models  # noqa: F401 — registers ORM classes with Base.metadata
+    import backend.app  # noqa: F401 — registers ORM classes with Base.metadata
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    from app.models import User
+    from backend.app import User
     from app.core.security import hash_password
     from sqlalchemy import select
 

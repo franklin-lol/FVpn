@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import User, Node, Protocol, EventLog
+from backend.app import User, Node, Protocol, EventLog
 from app.api.auth import require_admin
 
 router = APIRouter()

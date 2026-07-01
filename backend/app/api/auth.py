@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import User
+from backend.app import User
 from app.core.security import verify_password, create_access_token, decode_token
 from pydantic import BaseModel
 
