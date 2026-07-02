@@ -74,22 +74,24 @@ async def api(method: str, path: str, **kwargs) -> dict:
 ###############################################################################
 # ACCESS GUARD
 ###############################################################################
+import functools
+
 def admin_only(func):
+    @functools.wraps(func)
     async def wrapper(msg: Message, *args, **kwargs):
         if ADMIN_IDS and msg.from_user.id not in ADMIN_IDS:
             await msg.answer("⛔ Access denied.")
             return
         return await func(msg, *args, **kwargs)
-    wrapper.__name__ = func.__name__
     return wrapper
 
 def admin_cb(func):
+    @functools.wraps(func)
     async def wrapper(cb: CallbackQuery, *args, **kwargs):
         if ADMIN_IDS and cb.from_user.id not in ADMIN_IDS:
             await cb.answer("Access denied", show_alert=True)
             return
         return await func(cb, *args, **kwargs)
-    wrapper.__name__ = func.__name__
     return wrapper
 
 

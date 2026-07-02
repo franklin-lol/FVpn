@@ -107,6 +107,8 @@ services:
     image: teddysun/xray:latest
     container_name: fvpn-xray
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
     network_mode: host          # host network so it can bind proxy ports directly
     volumes:
       - ./configs/xray:/etc/xray
@@ -118,9 +120,20 @@ services:
   # SING-BOX — Hysteria2/TUIC/ShadowTLS/WireGuard proxy
   ##############################################################################
   singbox:
-    image: ghcr.io/sagernet/sing-box:latest
+    image: ghcr.io/sagernet/sing-box:v1.13.13
     container_name: fvpn-singbox
     restart: unless-stopped
+    labels:
+      # xray/sing-box break their config schema on major versions often
+      # enough (geoip removal in 1.12, domain_strategy deprecation right
+      # after) that silent nightly auto-updates are actively dangerous here.
+      # Update these two intentionally, by bumping the pinned tag above.
+      - "com.centurylinklabs.watchtower.enable=false"
+    environment:
+      # Escape hatch sing-box itself prints in the FATAL message when an
+      # outbound's domain_strategy field is used post-1.12 deprecation.
+      # Safe no-op on versions where it's not needed.
+      - ENABLE_DEPRECATED_LEGACY_DOMAIN_STRATEGY_OPTIONS=true
     network_mode: host          # host network for direct port binding
     # ghcr.io/sagernet/sing-box's ENTRYPOINT is the bare `sing-box` binary —
     # without an explicit subcommand it just prints help and exits, which
