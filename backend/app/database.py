@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.exc import OperationalError
 
 from app.config import settings
 
@@ -29,7 +30,15 @@ async def init_db():
     import app.models  # noqa: F401 — registers ORM classes with Base.metadata
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.run_sync(Base.metadata.create_all)
+        except OperationalError as e:
+            # 4 uvicorn workers all call init_db() concurrently on boot.
+            # SQLite's checkfirst races: worker A checks "table missing",
+            # worker B creates it first, worker A's CREATE then fails with
+            # "table X already exists" — harmless, the table is there.
+            if "already exists" not in str(e).lower():
+                raise
 
     from app.models import User
     from app.core.security import hash_password

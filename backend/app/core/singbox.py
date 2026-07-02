@@ -105,7 +105,9 @@ def _inbound_shadowsocks(port: int, cfg: dict) -> dict:
         "listen_port": port,
         "method":      cfg.get("method", "aes-256-gcm"),
         "password":    cfg.get("password", uuid.uuid4().hex),
-        "network":     "tcp,udp",
+        # no "network" key: sing-box only accepts "tcp" / "udp" singly here,
+        # not the combined string "tcp,udp" (hard FATAL parse error on boot).
+        # Omitting the field listens on both, which is what we want anyway.
         "multiplex":   {"enabled": True},
     }
 

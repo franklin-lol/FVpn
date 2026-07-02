@@ -111,6 +111,7 @@ services:
     volumes:
       - ./configs/xray:/etc/xray
       - /usr/local/share/xray:/usr/local/share/xray:ro
+      - /etc/fvpn/ssl:/etc/fvpn/ssl:ro   # trojan/vmess inbounds read cert here
     logging: *log
 
   ##############################################################################
@@ -129,6 +130,7 @@ services:
     command: ["run", "-c", "/etc/sing-box/config.json"]
     volumes:
       - ./configs/singbox:/etc/sing-box
+      - /etc/fvpn/ssl:/etc/fvpn/ssl:ro   # hysteria2/tuic inbounds read cert here
     cap_add:
       - NET_ADMIN               # required for TUN/WireGuard
     logging: *log
