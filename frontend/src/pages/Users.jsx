@@ -127,10 +127,15 @@ function SubModal({ user, onClose }) {
   return (
     <Modal title={`Subscriptions — ${user.username}`} onClose={onClose}>
       <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-        <select className="input select" style={{ flex:1 }} value={fmt} onChange={(e) => setFmt(e.target.value)}>
-          {FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <button className="btn btn-primary btn-sm" onClick={create} disabled={busy}>
+        <div style={{ flex:1 }}>
+          <label className="label field-label" style={{ display:"block", marginBottom:4 }}>
+            Client app (not a protocol — server auto-selects the best protocol for you)
+          </label>
+          <select className="input select" style={{ width:"100%" }} value={fmt} onChange={(e) => setFmt(e.target.value)}>
+            {FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={create} disabled={busy} style={{ alignSelf:"flex-end" }}>
           {busy ? <div className="btn-spinner"/> : "+ New"}
         </button>
       </div>

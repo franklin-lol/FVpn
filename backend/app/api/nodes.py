@@ -58,6 +58,27 @@ class AutoSetupRequest(BaseModel):
 # swallowed as a path parameter — same reasoning applies to any other
 # static sub-route added later under this router.
 
+def _node_out(n: Node, protocols: list[dict]) -> NodeOut:
+    """
+    Build NodeOut from an explicit field dict — NEVER call
+    NodeOut.model_validate(node) directly. from_attributes=True makes
+    pydantic read every declared field off the ORM object, INCLUDING the
+    `protocols` relationship (same name as our plain list[dict] field).
+    That triggers a lazy SQL load, but by the time response serialization
+    runs the request's async session/greenlet context has already exited
+    -> "MissingGreenlet: greenlet_spawn has not been called" -> 500 on
+    every /api/nodes call.
+    """
+    return NodeOut(
+        id=n.id, name=n.name, host=n.host, ssh_port=n.ssh_port,
+        ssh_user=n.ssh_user, group=n.group, status=n.status,
+        latency_ms=n.latency_ms, traffic_in=n.traffic_in,
+        traffic_out=n.traffic_out, is_active=n.is_active,
+        last_check=n.last_check, created_at=n.created_at,
+        protocols=protocols,
+    )
+
+
 @router.get("", response_model=list[NodeOut])
 async def list_nodes(
     group: Optional[str] = None,
@@ -76,9 +97,7 @@ async def list_nodes(
             {"id": p.id, "name": p.name, "port": p.port, "is_active": p.is_active}
             for p in pr.scalars().all()
         ]
-        d = NodeOut.model_validate(n)
-        d.protocols = protocols
-        out.append(d)
+        out.append(_node_out(n, protocols))
     return out
 
 
@@ -92,18 +111,7 @@ async def create_node(
     db.add(node)
     await db.commit()
     await db.refresh(node)
-
-    # Build the response manually instead of `return node`.
-    # NodeOut.protocols is a plain list[dict] field, but Node.protocols is a
-    # SQLAlchemy lazy relationship of the same name. With from_attributes=True,
-    # pydantic auto-reads node.protocols to fill it — triggering a lazy load
-    # AFTER this request's async session/greenlet context has already ended
-    # (response serialization happens outside the route handler's await chain).
-    # That raised: MissingGreenlet: greenlet_spawn has not been called.
-    # A brand-new node has no protocols yet anyway, so just set it explicitly.
-    out = NodeOut.model_validate(node)
-    out.protocols = []
-    return out
+    return _node_out(node, [])
 
 
 @router.post("/check-all")
@@ -130,10 +138,9 @@ async def get_node(
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     pr = await db.execute(select(Protocol).where(Protocol.node_id == node.id))
-    d = NodeOut.model_validate(node)
-    d.protocols = [{"id": p.id, "name": p.name, "port": p.port, "is_active": p.is_active}
-                   for p in pr.scalars().all()]
-    return d
+    protocols = [{"id": p.id, "name": p.name, "port": p.port, "is_active": p.is_active}
+                 for p in pr.scalars().all()]
+    return _node_out(node, protocols)
 
 
 @router.delete("/{node_id}", status_code=204)

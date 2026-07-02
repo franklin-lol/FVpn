@@ -124,7 +124,25 @@ async def fetch_subscription(
         "hiddify": "application/json", "shadowrocket": "text/plain",
         "v2rayng": "text/plain", "base64": "text/plain",
     }
-    return Response(content=config_data, media_type=content_types.get(fmt, "text/plain"))
+
+    # Standard sing-box / Hiddify / Clash-Meta subscription headers.
+    # Without Profile-Title, the client has no display name to show and
+    # falls back to rendering the raw subscription URL/token as the name
+    # in the app's server list — exactly the "name == link" symptom.
+    profile_title = base64.b64encode(f"FVpn-{user.username}".encode()).decode()
+    limit_bytes = int(user.traffic_limit_gb * 1e9) if user.traffic_limit_gb else 0
+    used_bytes = int(user.traffic_used_gb * 1e9)
+    expire_ts = int(user.expire_at.timestamp()) if user.expire_at else 0
+
+    headers = {
+        "Profile-Title": f"base64:{profile_title}",
+        "Profile-Update-Interval": "12",
+        "Subscription-Userinfo": (
+            f"upload=0; download={used_bytes}; total={limit_bytes}; expire={expire_ts}"
+        ),
+    }
+
+    return Response(content=config_data, media_type=content_types.get(fmt, "text/plain"), headers=headers)
 
 
 @router.get("/qr/{token}")
