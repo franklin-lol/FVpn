@@ -104,6 +104,14 @@ export default function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
+    // WS `live` only carries cpu_pct/active_users/online_nodes (see monitor.py
+    // broadcast payload). RAM, disk, node latency list, and recent events all
+    // come from this REST snapshot — without polling it, those panels never
+    // move after the initial page load.
+    const t = setInterval(load, 20000);
+    return () => clearInterval(t);
+  }, [load]);
+  useEffect(() => {
     const t = setInterval(() => setSpark(genSparkline()), 30000);
     return () => clearInterval(t);
   }, []);

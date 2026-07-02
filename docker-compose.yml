@@ -15,7 +15,7 @@ services:
     env_file: .env
     volumes:
       - backend-data:/data
-      - /etc/fvpn/ssl:/ssl:ro
+      - /etc/fvpn/ssl:/etc/fvpn/ssl:ro   # matches settings.CERT_PATH default (/etc/fvpn/ssl/cert.pem)
       - ./configs/xray:/etc/xray        # shared with xray container
       - ./configs/singbox:/etc/sing-box  # shared with singbox container
       # Docker socket so backend can restart proxy containers

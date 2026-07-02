@@ -29,7 +29,7 @@ def _inbound_hysteria2(port: int, cfg: dict) -> dict:
     inbound: dict[str, Any] = {
         "type":     "hysteria2",
         "tag":      "hysteria2-in",
-        "listen":   "::",
+        "listen":   "0.0.0.0",
         "listen_port": port,
         "users": [
             {"password": cfg.get("password", uuid.uuid4().hex)}
@@ -54,7 +54,7 @@ def _inbound_tuic(port: int, cfg: dict) -> dict:
     return {
         "type":        "tuic",
         "tag":         "tuic-in",
-        "listen":      "::",
+        "listen":      "0.0.0.0",
         "listen_port": port,
         "users": [
             {
@@ -81,7 +81,7 @@ def _inbound_shadowtls(port: int, cfg: dict) -> dict:
     return {
         "type":        "shadowtls",
         "tag":         "shadowtls-in",
-        "listen":      "::",
+        "listen":      "0.0.0.0",
         "listen_port": port,
         "version":     cfg.get("version", 3),
         "users": [
@@ -101,7 +101,7 @@ def _inbound_shadowsocks(port: int, cfg: dict) -> dict:
     return {
         "type":        "shadowsocks",
         "tag":         "ss-in",
-        "listen":      "::",
+        "listen":      "0.0.0.0",
         "listen_port": port,
         "method":      cfg.get("method", "aes-256-gcm"),
         "password":    cfg.get("password", uuid.uuid4().hex),
@@ -116,7 +116,7 @@ def _inbound_wireguard(port: int, cfg: dict) -> dict:
     return {
         "type":        "wireguard",
         "tag":         "wireguard-in",
-        "listen":      "::",
+        "listen":      "0.0.0.0",
         "listen_port": port,
         "system_interface": False,
         "interface_name":   "wg0",
