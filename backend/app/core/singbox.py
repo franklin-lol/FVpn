@@ -182,7 +182,11 @@ def build_singbox_server_config(protocols: list[dict]) -> dict:
         },
         "inbounds": inbounds,
         "outbounds": [
-            {"type": "direct",   "tag": "direct"},
+            # domain_strategy pins DNS resolution to A records only. Without
+            # this, sing-box resolves AAAA too and tries IPv6 first on a VPS
+            # with no IPv6 uplink — "network is unreachable" on every single
+            # connection, plus the wasted RTT before it falls back to IPv4.
+            {"type": "direct",   "tag": "direct",   "domain_strategy": "ipv4_only"},
             {"type": "block",    "tag": "block"},
         ],
         "route": {

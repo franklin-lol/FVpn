@@ -177,10 +177,23 @@ Auto-backup every 6 hours. Local retention: 7 days. Optional S3 upload via `BACK
 | `CORS_ORIGINS` | | `*` or `https://a.com,https://b.com` |
 | `TELEGRAM_TOKEN` | | From @BotFather |
 | `TELEGRAM_ADMIN_IDS` | | Comma-separated Telegram user IDs |
-| `REALITY_PRIVATE_KEY` | auto | VLESS Reality x25519 private key |
 | `BACKUP_S3_BUCKET` | | S3 bucket name (optional) |
 
+VLESS-Reality no longer needs `REALITY_PRIVATE_KEY`/`REALITY_PUBLIC_KEY` in `.env` — each Reality protocol generates its own X25519 keypair on creation (same algorithm as `xray x25519`), stored in that protocol's row.
+
 Full reference: [`.env.example`](.env.example)
+
+---
+
+## Current limitations
+
+Honest state, not marketing:
+
+- **Credentials are per-protocol, not per-user.** Every user who fetches a subscription gets the *same* Hysteria2/Shadowsocks/Trojan/Reality password for a given node — there's no per-device account isolation or concurrent-connection limit yet. `traffic_limit_gb` enforces a monthly quota, not single-session usage. Sharing a subscription link currently means sharing that node's credentials.
+- **Backend runs a single uvicorn worker** by design — tuned for 1 vCPU / 1 GB RAM targets, not for high concurrency. Scale the box before scaling workers.
+- **Sing-box's server-side `direct` outbound is IPv4-only** (`domain_strategy: ipv4_only`). Correct for VPS without an IPv6 uplink; if your box actually has working IPv6 egress, drop that field in `app/core/singbox.py` to allow it.
+- **Dashboard traffic chart is illustrative, not live telemetry** — there's no time-series traffic pipeline yet (`GET /api/stats/nodes/{id}/history` is a placeholder). CPU/active-users/online-nodes update live over WebSocket; RAM/disk/node-list/events poll every 20s; the 24h traffic graph does not reflect real bytes.
+- **Multi-node balancing works** — every active protocol on every active node is pooled into one `urltest` selector per subscription, client benchmarks and switches automatically. Add nodes via SSH auto-setup or manual protocol entry.
 
 ---
 
