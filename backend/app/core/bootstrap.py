@@ -94,24 +94,13 @@ async def _seed() -> None:
             ("hysteria2",   443,  {"sni": settings.DOMAIN}),
             ("shadowsocks", 8443, {"method": "aes-256-gcm"}),
             ("trojan",      8080, {"sni": settings.DOMAIN, "tls_insecure": True}),
+            # Reality's SNI should be a real third-party TLS host whose
+            # certificate gets "borrowed" for camouflage — NOT this
+            # server's own domain, that would defeat the point. Keypair is
+            # generated fresh by ProtocolConfig.defaults() below (real
+            # X25519, same as `xray x25519`) — no .env setup required.
+            ("vless",       443,  {"sni": getattr(settings, "REALITY_SNI", None) or "ya.ru"}),
         ]
-
-        if settings.REALITY_PRIVATE_KEY and settings.REALITY_PUBLIC_KEY:
-            defaults.insert(0, ("vless", 443, {
-                "private_key": settings.REALITY_PRIVATE_KEY,
-                "public_key":  settings.REALITY_PUBLIC_KEY,
-                # Reality's SNI should be a real third-party TLS host whose
-                # certificate gets "borrowed" for camouflage — NOT this
-                # server's own domain, that would defeat the point.
-                "sni": "www.cloudflare.com",
-            }))
-        else:
-            logger.warning(
-                "REALITY_PRIVATE_KEY/REALITY_PUBLIC_KEY not set in .env — "
-                "skipping VLESS-Reality auto-provision (install.sh's "
-                "gen_reality_keys step may not have run; run `xray x25519` "
-                "manually and add the keys to .env, then re-add the protocol)"
-            )
 
         for name, port, extra in defaults:
             cfg = ProtocolConfig.defaults(name, port, extra)

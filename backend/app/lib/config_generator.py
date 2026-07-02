@@ -54,7 +54,7 @@ class ProtocolConfig:
             "hysteria2":   {"password": secrets.token_hex(16), "obfs": "salamander", "obfs_password": secrets.token_hex(8), "tls_insecure": False},
             "shadowsocks": {"method": "aes-256-gcm", "password": secrets.token_hex(16)},
             "shadowtls":   {"password": secrets.token_hex(16), "sni": "www.apple.com", "version": 3},
-            "vless":       {"uuid": str(uuid.uuid4()), "flow": "xtls-rprx-vision", "sni": "www.cloudflare.com", "public_key": "", "short_id": secrets.token_hex(4)},
+            "vless":       {**ProtocolConfig._reality_keypair(), "uuid": str(uuid.uuid4()), "flow": "xtls-rprx-vision", "sni": "ya.ru", "short_id": secrets.token_hex(4)},
             "trojan":      {"password": secrets.token_hex(16), "sni": "your-domain.com", "tls_insecure": False},
             "tuic":        {"uuid": str(uuid.uuid4()), "password": secrets.token_hex(16), "congestion": "bbr"},
             "wireguard":   {"private_key": "", "public_key": "", "preshared_key": "", "dns": "1.1.1.1,8.8.8.8", "mtu": 1420},
@@ -63,6 +63,30 @@ class ProtocolConfig:
         base = defaults_map.get(name, {})
         base.update(extra)
         return base
+
+    @staticmethod
+    def _reality_keypair() -> dict:
+        """
+        X25519 keypair in the same raw/base64url-no-padding format `xray
+        x25519` prints. Previously public_key/private_key defaulted to ""
+        — an empty privateKey means the Reality inbound never actually
+        negotiates TLS, so every "vless" protocol made through the panel
+        was silently non-functional.
+        """
+        import base64
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+
+        priv = X25519PrivateKey.generate()
+        priv_raw = priv.private_bytes(
+            serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        )
+        pub_raw = priv.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+        )
+        enc = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+        return {"private_key": enc(priv_raw), "public_key": enc(pub_raw)}
 
 
 ###############################################################################

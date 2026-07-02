@@ -187,8 +187,11 @@ def build_singbox_server_config(protocols: list[dict]) -> dict:
         ],
         "route": {
             "rules": [
-                {"geoip":   "private", "outbound": "block"},
-                {"geosite": "category-ads-all", "outbound": "block"},
+                # geoip/geosite database matching was REMOVED in sing-box
+                # 1.12.0 (hard FATAL on boot, not a warning) — this crashed
+                # the container in a restart loop. ip_is_private is a
+                # built-in boolean matcher, no external database required.
+                {"ip_is_private": True, "outbound": "block"},
             ],
             "final":                   "direct",
             "auto_detect_interface":   True,
