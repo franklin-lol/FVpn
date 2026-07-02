@@ -128,9 +128,14 @@ _INBOUND_MAP = {
     "vless":       _inbound_vless,
     "vlessreality": _inbound_vless,
     "trojan":      _inbound_trojan,
-    "shadowsocks": _inbound_shadowsocks,
+    # "shadowsocks" is intentionally NOT registered here — sing-box owns it
+    # exclusively (see app/core/singbox.py). Both cores run with
+    # network_mode: host; registering the same protocol name in both
+    # _INBOUND_MAP dicts means both containers try to bind the identical
+    # host port, and one crash-loops on "address already in use".
     "vmess":       _inbound_vmess,
 }
+
 
 
 ###############################################################################
