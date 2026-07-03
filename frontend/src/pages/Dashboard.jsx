@@ -96,8 +96,16 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      const { data } = await statsApi.dashboard();
-      setStats(data);
+      const [{ data }, { data: sysData }] = await Promise.all([
+        statsApi.dashboard(),
+        statsApi.system(),
+      ]);
+      // /api/stats/dashboard returns flat ram_total_gb/disk_total_gb keys
+      // with no uptime/network fields — the System panel below reads the
+      // nested shape (sys.ram.pct, sys.uptime_hours, sys.network.sent_gb)
+      // that only /api/stats/system actually returns. Merge them so both
+      // the KPI cards and the System panel have real data.
+      setStats({ ...data, ...sysData });
     } catch { toast.error("Failed to load stats"); }
     finally  { setLoading(false); }
   }, []);

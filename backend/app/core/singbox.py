@@ -191,10 +191,13 @@ def build_singbox_server_config(protocols: list[dict]) -> dict:
         ],
         "route": {
             "rules": [
-                # geoip/geosite database matching was REMOVED in sing-box
-                # 1.12.0 (hard FATAL on boot, not a warning) — this crashed
-                # the container in a restart loop. ip_is_private is a
-                # built-in boolean matcher, no external database required.
+                # Client apps sometimes hardcode IPv6 literals (e.g. Google's
+                # DoT resolver 2001:4860:4860::8888:853) and connect directly
+                # — domain_strategy doesn't apply here, there's no domain to
+                # resolve. This VPS has no IPv6 route, so those dials would
+                # otherwise hang for the full timeout before failing. Reject
+                # immediately so the client's own IPv4 fallback kicks in fast.
+                {"ip_version": 6, "outbound": "block"},
                 {"ip_is_private": True, "outbound": "block"},
             ],
             "final":                   "direct",

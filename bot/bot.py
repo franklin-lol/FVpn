@@ -327,6 +327,41 @@ async def cmd_logs(event):
 
 
 ###############################################################################
+# /cert — TLS status + renew
+###############################################################################
+@dp.message(Command("cert"))
+@admin_only
+async def cmd_cert(msg: Message):
+    try:
+        async with httpx.AsyncClient(base_url=API_URL, timeout=20) as c:
+            if not _jwt_token:
+                await get_token()
+            r = await c.get("/api/system/cert/status",
+                            headers={"Authorization": f"Bearer {_jwt_token}"})
+            r.raise_for_status()
+            d = r.json()
+        if not d.get("valid"):
+            await msg.answer(
+                f"🔴 *{d.get('domain','?')}* — invalid\n`{d.get('error','')}`\n\n"
+                f"Renewing…", parse_mode="Markdown"
+            )
+            async with httpx.AsyncClient(base_url=API_URL, timeout=60) as c:
+                r = await c.post("/api/system/cert/renew",
+                                 headers={"Authorization": f"Bearer {_jwt_token}"})
+                out = r.json()
+            await msg.answer(f"```\n{out.get('output','')[:3500]}\n```", parse_mode="Markdown")
+        else:
+            await msg.answer(
+                f"🟢 *{d.get('domain','?')}* — valid\n"
+                f"Not before: `{d.get('not_before','?')}`\n"
+                f"Not after:  `{d.get('not_after','?')}`",
+                parse_mode="Markdown",
+            )
+    except Exception as e:
+        await msg.answer(f"❌ {e}")
+
+
+###############################################################################
 # /restart <xray|sing-box>
 ###############################################################################
 @dp.message(Command("restart"))
@@ -371,6 +406,7 @@ async def main():
         BotCommand(command="deluser",    description="Delete user by ID"),
         BotCommand(command="sub",        description="Get subscription for user"),
         BotCommand(command="logs",       description="View recent logs"),
+        BotCommand(command="cert",       description="TLS certificate status / renew"),
         BotCommand(command="restart",    description="Restart xray or sing-box"),
     ])
 
