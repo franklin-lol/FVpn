@@ -1,7 +1,7 @@
 # Stage 0: source the official Docker CLI binary (no apt repo, no signing key drama)
-FROM docker:cli AS dockercli
+FROM docker:29.3.1-cli@sha256:18f5ab0fab739ea822819b342357947dfba235cdef438cce345ebc0c143c5b34 AS dockercli
 
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
 
 WORKDIR /app
 
@@ -30,5 +30,5 @@ CMD ["uvicorn", "main:app", \
      "--workers", "1", \
      "--loop", "uvloop", \
      "--http", "httptools", \
-     "--proxy-headers", \
-     "--forwarded-allow-ips", "*"]
+     "--no-access-log", \
+     "--no-proxy-headers"]

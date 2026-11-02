@@ -1,7 +1,10 @@
 """Auth endpoints"""
 
 import time
-from collections import defaultdict
+import hashlib
+import math
+from dataclasses import dataclass
+from ipaddress import ip_address
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -9,8 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.config import settings
 from app.models import User
-from app.core.security import verify_password, create_access_token, decode_token
+from app.core.security import async_verify_password, create_access_token, decode_token
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -24,40 +28,107 @@ class Token(BaseModel):
     is_admin: bool
 
 
-# --- brute-force lockout -----------------------------------------------
-# In-process sliding window keyed by (client_ip, username). Correct as a
-# single-process store now that the backend runs one uvicorn worker
-# (--workers 1); would need Redis instead if that ever changes.
-_FAILS: dict[tuple[str, str], list[float]] = defaultdict(list)
-_MAX_ATTEMPTS  = 5
-_WINDOW_SEC    = 300   # 5 min
-_LOCKOUT_SEC   = 900   # 15 min once tripped
+_MAX_ATTEMPTS = 5
+_LOCKOUT_SEC = 900
+
+
+@dataclass
+class LoginAttempt:
+    sequence: int
+    created: float
+    address: str
+    account: str
+    failed: bool = False
+
+
+class LoginLimiter:
+    """Bounded, process-local reservations for the single event-loop worker.
+
+    Reserve synchronously before the first await. Pending requests count toward
+    both limits; denied requests never refresh TTL. Capacity exhaustion rejects
+    new keys rather than evicting active limits under attacker key churn.
+    """
+
+    def __init__(self, capacity: int = 4096):
+        self.capacity = capacity
+        self.accounts: dict[str, list[LoginAttempt]] = {}
+        self.addresses: dict[str, list[LoginAttempt]] = {}
+        self._sequence = 0
+        self._next_cleanup = 0.0
+
+    @staticmethod
+    def _denied(retry: float) -> None:
+        seconds = max(1, math.ceil(retry))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Try again later.",
+            headers={"Retry-After": str(seconds)},
+        )
+
+    def _cleanup(self, now: float) -> None:
+        for store in (self.accounts, self.addresses):
+            for key, attempts in list(store.items()):
+                live = [attempt for attempt in attempts if now - attempt.created < _LOCKOUT_SEC]
+                if live:
+                    store[key] = live
+                else:
+                    del store[key]
+        self._next_cleanup = now + 30
+
+    def reserve(self, address: str, username: str) -> LoginAttempt:
+        now = time.monotonic()
+        # Bound key size even for hostile form values; exact usernames remain
+        # case-sensitive, matching the database's authentication semantics.
+        account = hashlib.sha256(username.encode("utf-8")).hexdigest()
+        if now >= self._next_cleanup or any(
+            len(store) >= self.capacity for store in (self.accounts, self.addresses)
+        ):
+            self._cleanup(now)
+        for store, key in ((self.accounts, account), (self.addresses, address)):
+            attempts = [a for a in store.get(key, []) if now - a.created < _LOCKOUT_SEC]
+            if len(attempts) >= _MAX_ATTEMPTS:
+                self._denied(_LOCKOUT_SEC - (now - attempts[0].created))
+            if key not in store and len(store) >= self.capacity:
+                self._denied(_LOCKOUT_SEC)
+        self._sequence += 1
+        attempt = LoginAttempt(self._sequence, now, address, account)
+        for store, key in ((self.accounts, account), (self.addresses, address)):
+            store[key] = [a for a in store.get(key, []) if now - a.created < _LOCKOUT_SEC]
+            store[key].append(attempt)
+        return attempt
+
+    def release(self, attempt: LoginAttempt, *, success: bool = False) -> None:
+        for store, key in ((self.accounts, attempt.account), (self.addresses, attempt.address)):
+            remaining = [
+                a for a in store.get(key, [])
+                if not (
+                    a.sequence == attempt.sequence
+                    or (success and a.failed and a.address == attempt.address and a.account == attempt.account
+                        and a.sequence < attempt.sequence)
+                )
+            ]
+            if remaining:
+                store[key] = remaining
+            else:
+                store.pop(key, None)
+
+
+_limiter = LoginLimiter()
 
 
 def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
-
-
-def _check_lockout(key: tuple[str, str]) -> None:
-    now = time.time()
-    attempts = [t for t in _FAILS[key] if now - t < _LOCKOUT_SEC]
-    _FAILS[key] = attempts
-    if len(attempts) >= _MAX_ATTEMPTS:
-        retry_after = int(_LOCKOUT_SEC - (now - attempts[0]))
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many failed attempts. Try again in {retry_after}s.",
-            headers={"Retry-After": str(max(retry_after, 1))},
-        )
-
-
-def _record_fail(key: tuple[str, str]) -> None:
-    _FAILS[key].append(time.time())
-
-
-def _clear(key: tuple[str, str]) -> None:
-    _FAILS.pop(key, None)
+    peer = request.client.host if request.client else "unknown"
+    try:
+        peer = str(ip_address(peer))
+    except ValueError:
+        return peer
+    real = request.headers.getlist("x-real-ip")
+    if peer in settings.trusted_proxy_ips and len(real) == 1:
+        try:
+            return str(ip_address(real[0]))
+        except ValueError:
+            pass
+    return peer
 
 
 @router.post("/login", response_model=Token)
@@ -66,22 +137,27 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    key = (_client_ip(request), form.username)
-    _check_lockout(key)
-
-    result = await db.execute(select(User).where(User.username == form.username))
-    user = result.scalar_one_or_none()
-    if not user or not verify_password(form.password, user.hashed_password):
-        _record_fail(key)
+    attempt = _limiter.reserve(_client_ip(request), form.username)
+    try:
+        result = await db.execute(select(User).where(User.username == form.username))
+        user = result.scalar_one_or_none()
+        valid = bool(user and await async_verify_password(form.password, user.hashed_password))
+    except BaseException:
+        # Infrastructure errors/cancellation are not credential failures.
+        _limiter.release(attempt)
+        raise
+    if not valid:
+        attempt.failed = True
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not user.is_active:
+        attempt.failed = True
         raise HTTPException(status_code=403, detail="Account disabled")
 
-    _clear(key)
+    _limiter.release(attempt, success=True)
     token = create_access_token({"sub": user.username, "admin": user.is_admin})
     return Token(access_token=token, username=user.username, is_admin=user.is_admin)
 

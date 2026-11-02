@@ -42,7 +42,7 @@ class MonitorService:
                 select(func.count(Node.id)).where(Node.status == "online")
             )).scalar()
             active_users  = (await db.execute(
-                select(func.count(User.id)).where(User.is_active == True)
+                select(func.count(User.id)).where(User.is_active.is_(True))
             )).scalar()
 
         payload = {

@@ -41,7 +41,7 @@ async def init_db():
                 raise
 
     from app.models import User
-    from app.core.security import hash_password
+    from app.core.security import async_hash_password
     from sqlalchemy import select
 
     async with SessionLocal() as session:
@@ -50,7 +50,7 @@ async def init_db():
             admin = User(
                 username="admin",
                 email="admin@fvpn.local",
-                hashed_password=hash_password(settings.MASTER_PASSWORD),
+                hashed_password=await async_hash_password(settings.MASTER_PASSWORD),
                 is_admin=True,
                 is_active=True,
             )

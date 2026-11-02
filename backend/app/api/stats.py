@@ -1,5 +1,6 @@
 """Stats API — dashboard metrics"""
 
+import asyncio
 import psutil
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
@@ -21,7 +22,7 @@ async def dashboard_stats(
     """Aggregate stats for main dashboard"""
     # Counts
     total_users  = (await db.execute(select(func.count(User.id)))).scalar()
-    active_users = (await db.execute(select(func.count(User.id)).where(User.is_active == True))).scalar()
+    active_users = (await db.execute(select(func.count(User.id)).where(User.is_active.is_(True)))).scalar()
     total_nodes  = (await db.execute(select(func.count(Node.id)))).scalar()
     online_nodes = (await db.execute(select(func.count(Node.id)).where(Node.status == "online"))).scalar()
     total_protos = (await db.execute(select(func.count(Protocol.id)))).scalar()
@@ -31,7 +32,7 @@ async def dashboard_stats(
     traffic_out = (await db.execute(select(func.sum(Node.traffic_out)))).scalar() or 0
 
     # System resources
-    cpu    = psutil.cpu_percent(interval=0.5)
+    cpu    = await asyncio.to_thread(psutil.cpu_percent, interval=0.5)
     ram    = psutil.virtual_memory()
     disk   = psutil.disk_usage("/")
     net    = psutil.net_io_counters()
@@ -39,7 +40,7 @@ async def dashboard_stats(
     # Node latency list
     nodes_res = await db.execute(
         select(Node.name, Node.status, Node.latency_ms, Node.group)
-        .where(Node.is_active == True)
+        .where(Node.is_active.is_(True))
     )
     nodes = [
         {"name": r[0], "status": r[1], "latency_ms": r[2], "group": r[3]}
@@ -51,8 +52,8 @@ async def dashboard_stats(
         select(EventLog).order_by(EventLog.created_at.desc()).limit(20)
     )
     logs = [
-        {"level": l.level, "source": l.source, "message": l.message, "at": l.created_at.isoformat()}
-        for l in logs_res.scalars().all()
+        {"level": log.level, "source": log.source, "message": log.message, "at": log.created_at.isoformat()}
+        for log in logs_res.scalars().all()
     ]
 
     return {
@@ -108,7 +109,7 @@ async def node_traffic_history(
 
 @router.get("/system")
 async def system_stats(_=Depends(require_admin)):
-    cpu     = psutil.cpu_percent(percpu=True)
+    cpu     = await asyncio.to_thread(psutil.cpu_percent, interval=0.5, percpu=True)
     ram     = psutil.virtual_memory()
     disk    = psutil.disk_usage("/")
     net     = psutil.net_io_counters()

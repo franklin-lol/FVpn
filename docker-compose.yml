@@ -21,7 +21,7 @@ services:
       # Docker socket so backend can restart proxy containers
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     networks:
       - fvpn-net
     logging: *log
@@ -56,7 +56,7 @@ services:
     ports:
       - "80:80"
       - "2095:2095"
-      - "2096:2096"
+      - "127.0.0.1:2096:2096"
       # NOTE: port 443 is intentionally NOT published here. nginx.conf has
       # no `listen 443` server block (panel lives on 2095/2096), but Docker
       # still reserves the host port via iptables for ANY published mapping
@@ -71,14 +71,15 @@ services:
       - backend
       - frontend
     networks:
-      - fvpn-net
+      fvpn-net:
+        ipv4_address: 172.20.0.10
     logging: *log
 
   ##############################################################################
   # XRAY-CORE — VLESS/Trojan/Shadowsocks proxy
   ##############################################################################
   xray:
-    image: teddysun/xray:latest
+    image: teddysun/xray:1.8.24@sha256:0bd4b642b5e4e8d1de2fe06aab18905b90a28b60bf65c3f6cbfecf6b3340733b
     container_name: fvpn-xray
     restart: unless-stopped
     labels:
@@ -94,7 +95,7 @@ services:
   # SING-BOX — Hysteria2/TUIC/ShadowTLS/WireGuard proxy
   ##############################################################################
   singbox:
-    image: ghcr.io/sagernet/sing-box:v1.13.13
+    image: ghcr.io/sagernet/sing-box:v1.13.13@sha256:41c231813fc1584fcc4e8556ad839365aa47a1b730e370d89980d1878b9cdce0
     container_name: fvpn-singbox
     restart: unless-stopped
     labels:
@@ -144,7 +145,7 @@ services:
   # WATCHTOWER — nightly auto-update
   ##############################################################################
   watchtower:
-    image: containrrr/watchtower
+    image: containrrr/watchtower:1.7.1@sha256:6dd50763bbd632a83cb154d5451700530d1e44200b268a4e9488fefdfcf2b038
     container_name: uniproxy-watchtower
     restart: unless-stopped
     volumes:

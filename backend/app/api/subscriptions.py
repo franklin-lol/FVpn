@@ -1,7 +1,6 @@
 """Subscriptions — per-user config links in 5 formats"""
 
 import base64
-import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -14,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import User, Subscription, Node, Protocol
-from app.api.auth import get_current_user, require_admin
+from app.api.auth import get_current_user
 from app.lib.config_generator import ConfigGenerator, Balancer
 from app.config import settings
 
@@ -97,7 +96,7 @@ async def fetch_subscription(
     if not user or not user.is_active or user.is_expired:
         raise HTTPException(status_code=403, detail="Subscription expired or disabled")
 
-    nodes_res = await db.execute(select(Node).where(Node.is_active == True))
+    nodes_res = await db.execute(select(Node).where(Node.is_active.is_(True)))
     nodes = nodes_res.scalars().all()
 
     gen = ConfigGenerator(domain=settings.DOMAIN)
@@ -105,7 +104,7 @@ async def fetch_subscription(
 
     for node in nodes:
         proto_res = await db.execute(
-            select(Protocol).where(Protocol.node_id == node.id, Protocol.is_active == True)
+            select(Protocol).where(Protocol.node_id == node.id, Protocol.is_active.is_(True))
         )
         for proto in proto_res.scalars().all():
             gen.add_protocol(
@@ -114,7 +113,10 @@ async def fetch_subscription(
             )
 
     fmt = format or sub.format
-    config_data = gen.generate(fmt, balancer=balancer)
+    try:
+        config_data = gen.generate(fmt, balancer=balancer)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
 
     sub.last_fetch = datetime.utcnow()
     await db.commit()

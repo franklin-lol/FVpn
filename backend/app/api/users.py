@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import User
-from app.core.security import hash_password
+from app.core.security import async_hash_password
 from app.api.auth import get_current_user, require_admin
 
 router = APIRouter()
@@ -77,7 +77,7 @@ async def create_user(
     user = User(
         username=data.username,
         email=data.email,
-        hashed_password=hash_password(data.password),
+        hashed_password=await async_hash_password(data.password),
         traffic_limit_gb=data.traffic_limit_gb,
         expire_at=data.expire_at,
         is_admin=data.is_admin,
@@ -120,7 +120,7 @@ async def update_user(
 
     for field, value in data.model_dump(exclude_none=True).items():
         if field == "password":
-            setattr(user, "hashed_password", hash_password(value))
+            setattr(user, "hashed_password", await async_hash_password(value))
         else:
             setattr(user, field, value)
 

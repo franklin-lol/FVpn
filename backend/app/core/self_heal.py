@@ -30,8 +30,8 @@ class SelfHealService:
                 await self._cycle()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error(f"SelfHeal cycle error: {e}")
+            except Exception as error:
+                logger.error("SelfHeal cycle failed error_type=%s", type(error).__name__)
             await asyncio.sleep(settings.HEALTH_CHECK_INTERVAL)
         logger.info("SelfHealService stopped")
 
@@ -41,7 +41,7 @@ class SelfHealService:
         from sqlalchemy import select
 
         async with SessionLocal() as db:
-            result = await db.execute(select(Node).where(Node.is_active == True))
+            result = await db.execute(select(Node).where(Node.is_active.is_(True)))
             nodes = result.scalars().all()
 
         tasks = [self._check_node(n) for n in nodes]
@@ -53,11 +53,11 @@ class SelfHealService:
         async with SessionLocal() as db:
             for node, r in zip(nodes, results):
                 if isinstance(r, Exception):
-                    logger.warning(f"Node {node.name} check failed: {r}")
+                    logger.warning("Node check failed node_id=%s error_type=%s", node.id, type(r).__name__)
                     ev = EventLog(
                         level="warn",
                         source=f"node:{node.id}",
-                        message=f"Health check exception: {r}",
+                        message="Health check failed; inspect node connectivity",
                     )
                     db.add(ev)
             await db.commit()
@@ -69,9 +69,10 @@ class SelfHealService:
         import time
 
         t0 = time.monotonic()
+        restart_node = None
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                r = await client.get(settings.HEALTH_CHECK_URL)
+                await client.get(settings.HEALTH_CHECK_URL)
                 latency = (time.monotonic() - t0) * 1000
                 status = "online"
         except Exception:
@@ -92,10 +93,10 @@ class SelfHealService:
                     ev = EventLog(
                         level="warn",
                         source=f"node:{n.id}",
-                        message=f"Node offline — attempting SSH restart",
+                        message="Node offline — attempting SSH restart",
                     )
                     db.add(ev)
-                    asyncio.create_task(self._try_restart_node(n))
+                    restart_node = n
 
                 elif prev_status == "offline" and status == "online":
                     logger.info(f"Node {n.name} came back ONLINE")
@@ -108,6 +109,8 @@ class SelfHealService:
 
                 await db.commit()
 
+        if restart_node is not None:
+            await self._try_restart_node(restart_node)
         return status == "online"
 
     async def _try_restart_node(self, node):
@@ -116,6 +119,7 @@ class SelfHealService:
             logger.warning(f"No SSH key for node {node.name} — cannot auto-restart")
             return
 
+        ssh = None
         try:
             from app.core.ssh import SSHClient
             ssh = SSHClient(node.host, node.ssh_port, node.ssh_user, node.ssh_key)
@@ -125,9 +129,14 @@ class SelfHealService:
                 if stdout.strip() == "active":
                     await ssh.exec(f"systemctl restart {svc}")
                     logger.info(f"Restarted {svc} on {node.name}")
-            await ssh.disconnect()
-        except Exception as e:
-            logger.error(f"SSH restart failed for {node.name}: {e}")
+        except Exception as error:
+            logger.error("SSH restart failed node_id=%s error_type=%s", node.id, type(error).__name__)
+        finally:
+            if ssh is not None:
+                try:
+                    await ssh.disconnect()
+                except Exception as error:
+                    logger.warning("SSH disconnect failed node_id=%s error_type=%s", node.id, type(error).__name__)
 
     async def _check_local_services(self):
         """Restart local xray/sing-box if systemd reports failure"""

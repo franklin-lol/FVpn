@@ -16,28 +16,40 @@ Commands:
 import asyncio
 import logging
 import os
-from typing import Optional
+from collections.abc import Awaitable, Callable
+from typing import Any, Optional
 
 import httpx
-from aiogram import Bot, Dispatcher, F
+from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
-    CallbackQuery, BotCommand
+    CallbackQuery, BotCommand, TelegramObject
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("uniproxy-bot")
 
+def parse_admin_ids(raw: str) -> frozenset[int]:
+    try:
+        identifiers = frozenset(int(value.strip()) for value in raw.split(",") if value.strip())
+        if any(identifier <= 0 for identifier in identifiers):
+            raise ValueError
+        return identifiers
+    except ValueError:
+        raise RuntimeError(
+            "TELEGRAM_ADMIN_IDS must contain comma-separated positive numeric user IDs"
+        ) from None
+
+
 TOKEN    = os.environ.get("TELEGRAM_TOKEN", "")
 API_URL  = os.environ.get("API_URL", "http://backend:8000")
-ADMIN_IDS = list(map(int, filter(None, os.environ.get("TELEGRAM_ADMIN_IDS", "").split(","))))
+ADMIN_IDS = parse_admin_ids(os.environ.get("TELEGRAM_ADMIN_IDS", ""))
 BOT_USER  = os.environ.get("BOT_API_USER", "admin")
 BOT_PASS  = os.environ.get("BOT_API_PASS", os.environ.get("MASTER_PASSWORD", "admin"))
 
-bot = Bot(token=TOKEN)
 dp  = Dispatcher()
 
 ###############################################################################
@@ -74,25 +86,29 @@ async def api(method: str, path: str, **kwargs) -> dict:
 ###############################################################################
 # ACCESS GUARD
 ###############################################################################
-import functools
+class AdminAccessMiddleware(BaseMiddleware):
+    """Guard the update boundary, including callbacks and active FSM steps."""
 
-def admin_only(func):
-    @functools.wraps(func)
-    async def wrapper(msg: Message, *args, **kwargs):
-        if ADMIN_IDS and msg.from_user.id not in ADMIN_IDS:
-            await msg.answer("⛔ Access denied.")
-            return
-        return await func(msg, *args, **kwargs)
-    return wrapper
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        actor = data.get("event_from_user")
+        if actor is not None and actor.id in ADMIN_IDS:
+            return await handler(event, data)
 
-def admin_cb(func):
-    @functools.wraps(func)
-    async def wrapper(cb: CallbackQuery, *args, **kwargs):
-        if ADMIN_IDS and cb.from_user.id not in ADMIN_IDS:
-            await cb.answer("Access denied", show_alert=True)
-            return
-        return await func(cb, *args, **kwargs)
-    return wrapper
+        callback = getattr(event, "callback_query", None)
+        message = getattr(event, "message", None)
+        if callback is not None:
+            await callback.answer("Access denied.", show_alert=True)
+        elif message is not None:
+            await message.answer("Access denied.")
+        return None
+
+
+dp.update.outer_middleware(AdminAccessMiddleware())
 
 
 ###############################################################################
@@ -108,7 +124,6 @@ class AddUserFSM(StatesGroup):
 # /start
 ###############################################################################
 @dp.message(CommandStart())
-@admin_only
 async def cmd_start(msg: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Status",  callback_data="status"),
@@ -128,7 +143,6 @@ async def cmd_start(msg: Message):
 ###############################################################################
 @dp.message(Command("status"))
 @dp.callback_query(F.data == "status")
-@admin_only
 async def cmd_status(event):
     msg = event if isinstance(event, Message) else event.message
     try:
@@ -155,7 +169,6 @@ async def cmd_status(event):
 ###############################################################################
 @dp.message(Command("nodes"))
 @dp.callback_query(F.data == "nodes")
-@admin_only
 async def cmd_nodes(event):
     msg = event if isinstance(event, Message) else event.message
     try:
@@ -178,7 +191,6 @@ async def cmd_nodes(event):
 # /checknodes
 ###############################################################################
 @dp.message(Command("checknodes"))
-@admin_only
 async def cmd_check_nodes(msg: Message):
     await msg.answer("🔄 Running health check on all nodes…")
     try:
@@ -193,7 +205,6 @@ async def cmd_check_nodes(msg: Message):
 ###############################################################################
 @dp.message(Command("users"))
 @dp.callback_query(F.data == "users")
-@admin_only
 async def cmd_users(event):
     msg = event if isinstance(event, Message) else event.message
     try:
@@ -217,7 +228,6 @@ async def cmd_users(event):
 # /adduser — wizard
 ###############################################################################
 @dp.message(Command("adduser"))
-@admin_only
 async def cmd_adduser_start(msg: Message, state: FSMContext):
     await state.set_state(AddUserFSM.username)
     await msg.answer("👤 Enter *username* for the new user:", parse_mode="Markdown")
@@ -262,7 +272,6 @@ async def adduser_traffic(msg: Message, state: FSMContext):
 # /deluser <id>
 ###############################################################################
 @dp.message(Command("deluser"))
-@admin_only
 async def cmd_deluser(msg: Message):
     parts = msg.text.split()
     if len(parts) != 2 or not parts[1].isdigit():
@@ -280,7 +289,6 @@ async def cmd_deluser(msg: Message):
 # /sub <user_id>
 ###############################################################################
 @dp.message(Command("sub"))
-@admin_only
 async def cmd_sub(msg: Message):
     parts = msg.text.split()
     if len(parts) != 2 or not parts[1].isdigit():
@@ -307,7 +315,6 @@ async def cmd_sub(msg: Message):
 ###############################################################################
 @dp.message(Command("logs"))
 @dp.callback_query(F.data == "logs")
-@admin_only
 async def cmd_logs(event):
     msg = event if isinstance(event, Message) else event.message
     try:
@@ -330,7 +337,6 @@ async def cmd_logs(event):
 # /cert — TLS status + renew
 ###############################################################################
 @dp.message(Command("cert"))
-@admin_only
 async def cmd_cert(msg: Message):
     try:
         async with httpx.AsyncClient(base_url=API_URL, timeout=20) as c:
@@ -365,7 +371,6 @@ async def cmd_cert(msg: Message):
 # /restart <xray|sing-box>
 ###############################################################################
 @dp.message(Command("restart"))
-@admin_only
 async def cmd_restart(msg: Message):
     parts = msg.text.split()
     if len(parts) != 2 or parts[1] not in ("xray", "sing-box", "singbox"):
@@ -394,6 +399,10 @@ async def main():
     if not TOKEN:
         logger.error("TELEGRAM_TOKEN not set — bot disabled")
         return
+    if not ADMIN_IDS:
+        raise RuntimeError("TELEGRAM_ADMIN_IDS must contain at least one admin before starting the bot")
+
+    bot = Bot(token=TOKEN)
 
     # Register bot commands
     await bot.set_my_commands([

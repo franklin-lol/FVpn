@@ -2,24 +2,71 @@
 
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
+from urllib.parse import unquote_plus
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from app.config import settings
-from app.database import init_db
+from app.database import SessionLocal, init_db
 from app.api import auth, users, nodes, protocols, subscriptions, stats, system
 from app.core.monitor import MonitorService
 from app.core.self_heal import SelfHealService
+from app.core.security import decode_token
+from app.models import User
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("uniproxy")
+
+
+class SecretURLFilter(logging.Filter):
+    """Redact bearer URLs before Uvicorn or application handlers format them."""
+
+    _query = re.compile(r"""([?&]([^=&\s"'<>]+)=)[^&#\s"'<>]*""")
+    _path = re.compile(r"""(/(?:api/subscriptions/(?:fetch|qr|info)|s)/)[^/?#\s"'<>]+""")
+
+    @classmethod
+    def redact(cls, value: str) -> str:
+        value = cls._query.sub(
+            lambda match: match[1] + "[REDACTED]"
+            if unquote_plus(match[2]).lower() in {"token", "access_token"}
+            else match[0],
+            value,
+        )
+        return cls._path.sub(r"\1[REDACTED]", value)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Uvicorn's AccessFormatter unpacks these five arguments, so keep their
+        # sanitized shape. Other messages are rendered once and drop raw args.
+        if record.name == "uvicorn.access" and isinstance(record.args, tuple) and len(record.args) == 5:
+            record.msg = self.redact(str(record.msg))
+            record.args = tuple(self.redact(arg) if isinstance(arg, str) else arg for arg in record.args)
+        else:
+            record.msg = self.redact(record.getMessage())
+            record.args = ()
+        if record.exc_info:
+            record.exc_text = self.redact(logging.Formatter().formatException(record.exc_info))
+            record.exc_info = None
+        elif record.exc_text:
+            record.exc_text = self.redact(record.exc_text)
+        if record.stack_info:
+            record.stack_info = self.redact(record.stack_info)
+        return True
+
+
+_secret_url_filter = SecretURLFilter()
+for _logger_name in ("uvicorn.error", "uvicorn.access", "uniproxy"):
+    logging.getLogger(_logger_name).addFilter(_secret_url_filter)
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_secret_url_filter)
 
 
 class WSManager:
@@ -105,17 +152,33 @@ async def health():
 
 @app.websocket("/ws/stats")
 async def ws_stats(websocket: WebSocket, token: str | None = None):
-    from app.core.security import verify_token
-    if not token or not verify_token(token):
+    username = decode_token(token) if token else None
+    if not isinstance(username, str) or not username:
         await websocket.close(code=4001)
         return
+    async with SessionLocal() as db:
+        authorized = (
+            await db.execute(
+                select(User.id).where(
+                    User.username == username,
+                    User.is_active.is_(True),
+                    User.is_admin.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+    if authorized is None:
+        await websocket.close(code=4001)
+        return
+
     await ws_manager.connect(websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
+        pass
     except Exception:
+        pass
+    finally:
         ws_manager.disconnect(websocket)
 
 

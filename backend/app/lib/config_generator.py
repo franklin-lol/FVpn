@@ -10,7 +10,7 @@ import base64
 import json
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 import yaml
 
@@ -85,7 +85,8 @@ class ProtocolConfig:
         pub_raw = priv.public_key().public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw,
         )
-        enc = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+        def enc(value: bytes) -> str:
+            return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
         return {"private_key": enc(priv_raw), "public_key": enc(pub_raw)}
 
 
@@ -108,7 +109,10 @@ class ConfigGenerator:
             tag=tag or f"{name}-{host}:{port}",
             extra=extra,
         )
-        self._proxies.append(entry)
+        # WireGuard records contain server credentials, not a provisioned
+        # client peer. Retain them in storage but never expose them to clients.
+        if entry.proto != "wireguard":
+            self._proxies.append(entry)
         return self
 
     def set_fallback(self, chain: list[str]) -> "ConfigGenerator":
@@ -129,6 +133,11 @@ class ConfigGenerator:
         fn = dispatch.get(fmt.lower())
         if not fn:
             raise ValueError(f"Unknown format: {fmt}. Supported: {list(dispatch.keys())}")
+        serializer = self._clash_proxy if fmt.lower() == "clash" else (
+            self._singbox_outbound if fmt.lower() in {"singbox", "sing-box", "hiddify"} else self._uri
+        )
+        if not any(serializer(proxy) for proxy in self._proxies):
+            raise ValueError("No compatible client protocols; enable a supported protocol. WireGuard client provisioning is unavailable.")
         return fn(bl)
 
     def to_base64(self, config: str) -> str:
@@ -162,6 +171,14 @@ class ConfigGenerator:
             ob = self._singbox_outbound(p)
             if ob:
                 outbounds.append(ob)
+                if p.proto == "shadowtls":
+                    outbounds.append({
+                        "type": "shadowtls", "tag": f"{p.tag}-shadowtls",
+                        "server": p.host, "server_port": p.port,
+                        "password": p.extra.get("password", ""),
+                        "version": p.extra.get("version", 3),
+                        "tls": {"enabled": True, "server_name": p.extra.get("sni", "www.apple.com")},
+                    })
                 tags.append(p.tag)
 
         # URLTest selector (balancer)
@@ -218,11 +235,10 @@ class ConfigGenerator:
                     "password": e.get("password", "")}
 
         if p.proto == "shadowtls":
-            return {"type": "shadowtls", "tag": p.tag,
-                    "server": p.host, "server_port": p.port,
+            return {**base, "type": "shadowsocks",
+                    "method": e.get("method", "aes-256-gcm"),
                     "password": e.get("password", ""),
-                    "version": e.get("version", 3),
-                    "tls": {"enabled": True, "server_name": e.get("sni", "www.apple.com")}}
+                    "detour": f"{p.tag}-shadowtls"}
 
         if p.proto in ("vless", "vlessreality"):
             return {**base, "type": "vless",
@@ -246,15 +262,6 @@ class ConfigGenerator:
                     "password": e.get("password", ""),
                     "congestion_control": e.get("congestion", "bbr"),
                     "tls": {"enabled": True, "server_name": e.get("sni", p.host)}}
-
-        if p.proto == "wireguard":
-            return {"type": "wireguard", "tag": p.tag,
-                    "server": p.host, "server_port": p.port,
-                    "private_key": e.get("private_key", ""),
-                    "peer_public_key": e.get("public_key", ""),
-                    "pre_shared_key": e.get("preshared_key", ""),
-                    "dns": e.get("dns", "1.1.1.1"),
-                    "mtu": e.get("mtu", 1420)}
 
         if p.proto == "ssh":
             return {**base, "type": "ssh",
@@ -461,11 +468,6 @@ class ConfigGenerator:
         if p.proto == "tuic":
             params = f"congestion_control={e.get('congestion','bbr')}&sni={e.get('sni',p.host)}"
             return f"tuic://{e.get('uuid','')}:{e.get('password','')}@{p.host}:{p.port}?{params}#{_url_encode(tag)}"
-
-        if p.proto == "wireguard":
-            return (f"wireguard://{p.host}:{p.port}"
-                    f"?publickey={e.get('public_key','')}&psk={e.get('preshared_key','')}"
-                    f"&mtu={e.get('mtu',1420)}#{_url_encode(tag)}")
 
         return None
 

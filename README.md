@@ -16,7 +16,7 @@ The installer prepares the checkout, fills missing or empty required environment
 
 The panel uses **HTTPS on port 2095**. A public IP uses a self-signed certificate, which requires a browser exception. A domain can use Let's Encrypt when DNS and inbound port 80 are available. TCP port 443 belongs to the proxy core, not the panel.
 
-Keep `.env`, `/etc/fvpn/env`, private keys and backups private. Environment files use mode 600. Do not commit them. Changing `MASTER_PASSWORD` does not reset an existing database user's password. Changing `JWT_SECRET` signs out existing sessions.
+Keep `.env`, `/etc/fvpn/env`, private keys and backups private. Environment files use mode 600. Do not commit them. Changing `MASTER_PASSWORD` does not reset an existing database user's password. Changing `JWT_SECRET` signs out existing sessions. Empty, short (under 32 bytes) and known example JWT secrets are rejected at startup; generate your own value.
 
 ## Manual configuration
 
@@ -45,13 +45,25 @@ Existing installations retain their SQLite data in the `backend-data` volume. Ne
 
 The server builders cover seven protocol families; client formats support different subsets. Do not infer device compatibility from the number of names in the interface. Core configuration is checked against the installed image before replacement. Failed application restores the previous files and attempts to recover the affected cores.
 
+WireGuard is excluded from all client exports until separate client keys are implemented. Existing database records are preserved. A subscription with no supported active configuration returns an explicit error.
+
 ## Nodes and subscriptions
 
 Local configuration is applied only to a node explicitly marked local. Editing a remote node never restarts the local proxy containers. Remote configuration delivery is manual; SSH auto-setup is limited to the implemented Shadowsocks flow. Other setup requests return an actionable unsupported/manual result.
 
+SSH uses trust on first use: the first successful connection stores the server public key in `/data/ssh_known_hosts`; subsequent connections reject changed keys before authentication. Verify a new server's SHA256 host fingerprint through a trusted channel before connecting. After a legitimate key rotation, back up and remove only that host's entry from this file, then reconnect. Never clear the entire file to bypass a mismatch.
+
 Subscriptions export client configuration in sing-box, Clash, Hiddify, Shadowrocket, v2rayNG and base64 formats, subject to each format's protocol support. Credentials are shared per protocol. Disabling a user or subscription prevents future downloads but does **not** revoke credentials already imported into a client. Rotate the affected protocol credentials to revoke them; that affects everyone sharing that protocol.
 
 Traffic limits are stored metadata. Quotas, per-user traffic accounting and connection limits are **not enforced**. Dashboard traffic history is not real telemetry. Node health checks are reachability indicators, not end-to-end VPN verification.
+
+## Security defaults
+
+Ports 8000 and 2096 bind only to server loopback; use the HTTPS panel port for remote administration and subscriptions. Nginx overwrites client IP headers, and the single backend worker trusts only `TRUSTED_PROXY_IPS` (the fixed Compose Nginx address by default). Preserve that pairing if changing the Docker network. Login attempts are bounded independently by account and real client IP; limits reset on backend restart.
+
+Empty or legacy `CORS_ORIGINS=*` derives the panel HTTPS origin from `DOMAIN` and `PANEL_PORT`. Set explicit comma-separated or JSON origins only when hosting the frontend separately. A configured Telegram bot requires `TELEGRAM_ADMIN_IDS`; an empty list fails startup and never grants access. Keep bot API credentials synchronized if changing its account password.
+
+Runtime images are pinned by digest and frontend dependencies by `package-lock.json`. Update them deliberately with the checks below; core images are excluded from unattended Watchtower updates. The backend still has Docker socket access for local core control; deploy the panel only on a trusted personal server and restrict administrator access.
 
 ## Backups
 
