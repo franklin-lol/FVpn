@@ -143,6 +143,8 @@ npm run build
 
 Validate shell files with `bash -n` and ShellCheck. Do not run the installer or host-management scripts as tests. Core checks must use disposable configuration and test certificates, without host networking or real installation data.
 
+After deployment, check the subscription collection through the HTTPS panel: unauthenticated requests to both `/api/subscriptions` and `/api/subscriptions/` must return 401 directly, without a redirect. Creating a link from Users must return 201 for the selected owner. Exercise this through Nginx: direct backend tests cannot detect proxy redirects that turn POST into GET.
+
 ---
 
 <div align="center">

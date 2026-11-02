@@ -66,3 +66,12 @@ Plan: docs/implementation-plan.md
 - Regression proof: the slash cases failed before the alias fix. Focused tests passed, followed by all 245 Python 3.12 tests and Ruff across backend, bot, tests and tools. Existing dependency deprecation warnings remain.
 - Static infrastructure checks passed: bash -n, ShellCheck, Compose default/optional service selection, API 1.44 default and 1.41 override. The installer was not executed. Frontend and proxy configuration generation were unchanged.
 - Not tested: applying these fixes to the live server, actual VPN client traffic, certificate renewal or compatibility with old Compose releases. Server changes remain for the operator to apply.
+
+## Follow-up: subscription creation through Nginx
+
+- Read-only checks of the updated server confirmed that the canonical collection URL received a 301 from Nginx, while both backend routes reached authentication directly. The earlier ASGI-only regression missed this proxy behavior.
+- The slash-terminated proxy location automatically appended a slash before forwarding. A browser changed POST to GET after that 301, returning the subscription list instead of the created object and triggering the frontend ownership guard.
+- Removed only the trailing slash from the subscription location prefix. Proxy headers, rate limits and token-safe logging remain in the same block; frontend ownership checks remain enabled.
+- Reproduced the exact POST -> 301 -> GET -> 200/empty-list failure with the pinned Nginx image, a synthetic HTTP backend and an internal Docker network with no published ports. With the checked-in configuration mounted read-only, both URL forms returned 201 with no Location header or redirect and preserved the JSON owner, format and Authorization header. Root independently repeated the passing transport check and nginx -t.
+- All 21 subscription tests passed again on Python 3.12. No frontend, backend or core-generation source changed; their broader gates were not repeated. README now includes deployment checks through the proxy.
+- The live server was not changed. Applying the correction requires rebuilding the nginx image because its configuration is copied during image construction; restarting the existing container is insufficient. VPN client traffic and the corrected live request remain unverified.

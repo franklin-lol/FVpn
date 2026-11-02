@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Nginx proxies subscription collection requests without a trailing-slash redirect, preserving POST bodies and the selected subscription owner.
 - Subscription collection GET/POST requests accept both trailing-slash forms without redirects, preserving authentication and ownership checks.
 - Bot configuration instructions now recreate the container so edited environment values take effect.
 - Watchtower is opt-in through the `updates` Compose profile; its configurable Docker API defaults to 1.44 for Docker 29 compatibility. Pinned image digests still require deliberate updates.
