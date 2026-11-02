@@ -1,3 +1,29 @@
+<div align="center">
+
+```
+
+    ███████╗██╗   ██╗██████╗ ███╗   ██╗
+    ██╔════╝██║   ██║██╔══██╗████╗  ██║
+    █████╗  ██║   ██║██████╔╝██╔██╗ ██║
+    ██╔══╝  ╚██╗ ██╔╝██╔═══╝ ██║╚██╗██║
+    ██║      ╚████╔╝ ██║     ██║ ╚████║
+    ╚═╝       ╚═══╝  ╚═╝     ╚═╝  ╚═══╝
+
+
+```
+
+**Unified Proxy Management Panel**
+
+[![Python](https://img.shields.io/badge/python-3.12-3776ab?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react&logoColor=white)](https://react.dev)
+[![Docker](https://img.shields.io/badge/Docker-compose-2496ed?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
+[![Protocols](https://img.shields.io/badge/protocols-7-7c3aed?style=flat-square)](#protocol-support)
+
+[github.com/franklin-lol/FVpn](https://github.com/franklin-lol/FVpn) &nbsp;·&nbsp; [franklin-sys.vercel.app](https://franklin-sys.vercel.app/)
+
+</div>
+
 # FVpn
 
 Self-hosted management panel for Xray and sing-box. FastAPI, React and Docker Compose; one backend worker and a persistent SQLite database. Designed for a small personal deployment.
@@ -105,3 +131,11 @@ npm run build
 ```
 
 Validate shell files with `bash -n` and ShellCheck. Do not run the installer or host-management scripts as tests. Core checks must use disposable configuration and test certificates, without host networking or real installation data.
+
+---
+
+<div align="center">
+
+Built by [franklin](https://franklin-sys.vercel.app/)
+
+</div>
