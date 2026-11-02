@@ -18,7 +18,7 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
-    VERSION: str = "1.0.0"
+    VERSION: str = "1.0.2"
 
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:////data/fvpn.db"

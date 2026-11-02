@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.0.2] — 2026-11-02
+
+### Fixed
+- Installation preserves nonempty environment values, protects environment files, avoids unrelated port-80 processes and publishes usable TLS files for containers.
+- Backups use consistent SQLite snapshots and verify restoration before publication. Core configuration is validated before application, rolls back on failure and supports an empty protocol set.
+- Remote-node synchronization no longer changes local containers. Subscription creation uses the selected user; parent deletion preserves database integrity.
+- Generated sing-box clients use the current DNS, routing and TUN schema. New VMess configurations persist one UUID shared by the server and clients.
+
+### Security
+- Bot access fails closed, weak JWT secrets are rejected, and login limits apply independently to accounts and trusted client IPs.
+- SSH uses persistent TOFU host-key verification. WireGuard credentials are excluded from client exports; WebSocket access requires an active administrator.
+- Auxiliary ports bind loopback, CORS defaults to the panel origin, bearer URLs are redacted from logs, and images and frontend dependencies are pinned.
+- Password hashing and blocking CPU sampling run outside the event loop.
+
+### Added
+- First-run guide, password changes, and a public connection page with QR, application import links and three setup steps.
+- Responsive Tailwind interface with Russian/English, light/dark/system themes, actionable states and advanced protocol editing.
+
+### Changed
+- Removed unused Redis and simulated traffic displays. Application version metadata now agrees with the changelog.
+- Client JSON requires sing-box 1.12+; validation uses sing-box 1.13.13 and Xray 1.8.24.
+- Existing environment values and database records are retained; setup state is an additive table. Proxy credentials remain shared, quotas remain unenforced and remote configuration delivery remains manual.
+
+### Validation
+- 240 Python tests, Ruff, Node 20 production build, shell syntax/ShellCheck and real core configuration checks passed during implementation.
+- Browser checks covered onboarding, subscription ownership, anonymous connection pages, themes/languages and a 390px viewport. Real installation, firewall changes, certificate renewal, Telegram delivery and native VPN imports were not exercised.
+
 ## [1.0.1] — 2026-07-03
 
 ### Fixed

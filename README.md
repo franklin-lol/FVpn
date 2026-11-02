@@ -2,6 +2,8 @@
 
 Self-hosted management panel for Xray and sing-box. FastAPI, React and Docker Compose; one backend worker and a persistent SQLite database. Designed for a small personal deployment.
 
+Current version: **1.0.2**. See [CHANGELOG.md](CHANGELOG.md) for release notes covering installation and backup fixes, security defaults, and the refreshed setup and connection interface.
+
 ## Installation
 
 Ubuntu 20.04+ or Debian 11+, root access, and a public hostname or IP address are required. Review the installer before running it on your server:
@@ -61,7 +63,7 @@ SSH uses trust on first use: the first successful connection stores the server p
 
 Subscriptions export client configuration in sing-box, Clash, Hiddify, Shadowrocket, v2rayNG and base64 formats, subject to each format's protocol support. Credentials are shared per protocol. Disabling a user or subscription prevents future downloads but does **not** revoke credentials already imported into a client. Rotate the affected protocol credentials to revoke them; that affects everyone sharing that protocol.
 
-Traffic limits are stored metadata. Quotas, per-user traffic accounting and connection limits are **not enforced**. Dashboard traffic history is not real telemetry. Node health checks are reachability indicators, not end-to-end VPN verification.
+Traffic limits are stored metadata. Quotas, per-user traffic accounting and connection limits are **not enforced**. The dashboard does not display simulated traffic; the history API reports that measurements are unavailable. Node health checks are reachability indicators, not end-to-end VPN verification.
 
 ## Security defaults
 
