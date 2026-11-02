@@ -94,6 +94,7 @@ async def _client_generator(db: AsyncSession) -> ConfigGenerator:
 
 
 @router.get("", response_model=list[SubOut])
+@router.get("/", response_model=list[SubOut], include_in_schema=False)
 async def list_subs(
     current: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -107,6 +108,7 @@ async def list_subs(
 
 
 @router.post("", response_model=SubOut, status_code=201)
+@router.post("/", response_model=SubOut, status_code=201, include_in_schema=False)
 async def create_sub(
     data: SubCreate,
     current: User = Depends(get_current_user),

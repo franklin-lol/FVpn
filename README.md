@@ -46,6 +46,8 @@ The panel uses **HTTPS on port 2095**. A public IP uses a self-signed certificat
 
 On a new database, sign in as `admin` with the installer password. The first-run guide changes that password, reuses the local server and applies the recommended VLESS Reality preset. Existing installations open the dashboard directly. Advanced protocol options remain available under Connections; saving parameters and applying them are separate operations with an explicit result.
 
+Fresh installations create two active connections: VLESS Reality on TCP 443 and Shadowsocks on TCP 8443. The guide selects VLESS as the recommended option and preserves Shadowsocks. Add other protocols deliberately under Connections.
+
 Open Users, choose a person and create a connection link. Share its `/s/…` guide page: it offers a QR, device/app selection, an import button and three setup steps. The interface supports Russian/English, light/dark/system themes and phone layouts. Subscription links are bearer secrets; anyone with one can download its configuration.
 
 Keep `.env`, `/etc/fvpn/env`, private keys and backups private. Environment files use mode 600. Do not commit them. Changing `MASTER_PASSWORD` does not reset an existing database user's password. Changing `JWT_SECRET` signs out existing sessions. Empty, short (under 32 bytes) and known example JWT secrets are rejected at startup; generate your own value.
@@ -97,7 +99,16 @@ Ports 8000 and 2096 bind only to server loopback; use the HTTPS panel port for r
 
 Empty or legacy `CORS_ORIGINS=*` derives the panel HTTPS origin from `DOMAIN` and `PANEL_PORT`. Set explicit comma-separated or JSON origins only when hosting the frontend separately. A configured Telegram bot requires `TELEGRAM_ADMIN_IDS`; an empty list fails startup and never grants access. In Compose the bot uses short-lived bearer tokens signed with the already-shared JWT secret, so changing the admin password does not disable it. A separately deployed bot without that secret uses `BOT_API_USER`/`BOT_API_PASS` (legacy fallback: `MASTER_PASSWORD`); keep that password synchronized.
 
+After changing `TELEGRAM_TOKEN` or `TELEGRAM_ADMIN_IDS` in the checkout's `.env`, recreate the bot container; `restart` keeps its old environment:
+
+```bash
+docker compose up -d --no-deps --force-recreate bot
+docker compose logs --since=1m bot
+```
+
 Runtime images are pinned by digest and frontend dependencies by `package-lock.json`. Update them deliberately with the checks below; core images are excluded from unattended Watchtower updates. The backend still has Docker socket access for local core control; deploy the panel only on a trusted personal server and restrict administrator access.
+
+Watchtower is optional and excluded from the default Compose startup because it cannot update pinned image digests. To stop an updater from an earlier installation, run `docker compose stop watchtower`. Explicit opt-in is `docker compose --profile updates up -d watchtower`; its Docker API defaults to 1.44, the minimum accepted by Docker 29. On an older daemon, set `WATCHTOWER_DOCKER_API_VERSION` to a version that daemon supports before opting in. Keep it disabled when using only the supplied pinned images and local builds.
 
 ## Backups
 

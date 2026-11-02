@@ -3,6 +3,8 @@
 .superpowers
 .env
 .env.*
+ssh_vps.txt
+.ssh-audit
 **/.env
 **/.env.*
 **/*.pem

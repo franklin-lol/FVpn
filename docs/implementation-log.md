@@ -55,3 +55,14 @@ Plan: docs/implementation-plan.md
 - Final Login Lighthouse snapshot: accessibility 100 and best practices 100; no accessibility findings. This is a single-screen automated check, not a whole-product WCAG certification. Indexing is disabled for the private panel.
 - Runtime backend Docker build and Node 20 npm ci/production build passed. Full Python suite: 240 tests passed; Ruff includes backend, bot, tests and tools. Actual Xray 1.8.24 and sing-box 1.13.13 accepted all generated server/client fixtures.
 - Scope retained: shared proxy credentials, no enforced quotas/traffic telemetry, manual remote delivery and first-contact SSH trust. The installer, firewall, renewal and host scripts were never executed; real VPN client import/traffic and external Telegram delivery remain unverified.
+
+## Post-release server diagnostics and fixes
+
+- SSH access was explicitly authorized for read-only diagnostics. No server files, configuration, containers or credentials were changed. The local access file was untracked and is now excluded from Git and the root Docker build context, along with the local diagnostic directory.
+- Observed Docker 29.1.3 accepts API 1.44 or newer; Watchtower 1.7.1 was repeatedly exiting with its default API 1.25. Its tagged source confirms no API negotiation and no updates for pinned digests. The updater is now opt-in through the `updates` profile with a configurable API default of 1.44; ordinary startup no longer starts it.
+- The bot was already polling and serving commands successfully after container recreation. Only presence/count/format of runtime settings were checked, without printing their values. Installer output and documentation now explain that `restart` does not reload an edited env file.
+- HTTPS returned 200 with normal certificate verification; backend health and loopback-only auxiliary listeners were confirmed. The two initial protocols are intentional and remain unchanged.
+- Direct backend and HTTPS requests both confirmed a 404 for the subscription collection with a trailing slash, while OpenAPI registered only the canonical form. Hidden GET/POST aliases now share the existing handlers and authorization; schema paths remain stable.
+- Regression proof: the slash cases failed before the alias fix. Focused tests passed, followed by all 245 Python 3.12 tests and Ruff across backend, bot, tests and tools. Existing dependency deprecation warnings remain.
+- Static infrastructure checks passed: bash -n, ShellCheck, Compose default/optional service selection, API 1.44 default and 1.41 override. The installer was not executed. Frontend and proxy configuration generation were unchanged.
+- Not tested: applying these fixes to the live server, actual VPN client traffic, certificate renewal or compatibility with old Compose releases. Server changes remain for the operator to apply.

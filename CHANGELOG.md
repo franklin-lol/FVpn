@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Subscription collection GET/POST requests accept both trailing-slash forms without redirects, preserving authentication and ownership checks.
+- Bot configuration instructions now recreate the container so edited environment values take effect.
+- Watchtower is opt-in through the `updates` Compose profile; its configurable Docker API defaults to 1.44 for Docker 29 compatibility. Pinned image digests still require deliberate updates.
+- Local server-access credentials and SSH diagnostics are excluded from Git and the root Docker build context.
+
 ## [1.0.2] — 2026-11-02
 
 ### Fixed

@@ -652,7 +652,7 @@ print_summary() {
     echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${YELLOW}  Telegram bot: add TELEGRAM_TOKEN + TELEGRAM_ADMIN_IDS to .env${NC}"
-    echo -e "${YELLOW}  Then run:  docker compose restart bot${NC}"
+    echo -e "${YELLOW}  Then run:  docker compose up -d --no-deps --force-recreate bot${NC}"
     echo ""
 }
 

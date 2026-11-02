@@ -36,7 +36,7 @@ async def context(tmp_path):
         sub = Subscription(user_id=member.id, format="base64")
         db.add(sub)
         await db.commit()
-    app = FastAPI()
+    app = FastAPI(redirect_slashes=False)
     app.include_router(subscriptions.router, prefix="/subscriptions")
 
     async def database():
@@ -51,23 +51,38 @@ async def context(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_omitted_owner_is_current_and_other_owner_requires_admin(context):
+@pytest.mark.parametrize("path", ["/subscriptions", "/subscriptions/"])
+async def test_omitted_owner_is_current_and_other_owner_requires_admin(context, path):
     client, app, _, admin, member, _, _, _ = context
-    own = await client.post("/subscriptions", json={"format": "singbox"})
+    own = await client.post(path, json={"format": "singbox"})
     assert own.status_code == 201
     assert own.json()["user_id"] == member.id
     assert own.json()["connect_url"].endswith("/s/" + own.json()["token"])
-    assert (await client.post("/subscriptions", json={"user_id": admin.id})).status_code == 403
+    assert (await client.post(path, json={"user_id": admin.id})).status_code == 403
     app.dependency_overrides[get_current_user] = lambda: admin
-    other = await client.post("/subscriptions", json={"user_id": member.id})
+    other = await client.post(path, json={"user_id": member.id})
     assert other.status_code == 201
     assert other.json()["user_id"] == member.id
-    assert (await client.post("/subscriptions", json={"user_id": 99999})).status_code == 404
+    assert (await client.post(path, json={"user_id": 99999})).status_code == 404
+    admin_sub = await client.post(path, json={"format": "singbox"})
+    assert admin_sub.status_code == 201
+    assert admin_sub.json()["user_id"] == admin.id
     app.dependency_overrides[get_current_user] = lambda: member
-    listed = await client.get("/subscriptions")
+    listed = await client.get(path)
     assert listed.status_code == 200
     assert all(row["user_id"] == member.id and row["connect_url"].endswith("/s/" + row["token"])
                for row in listed.json())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/subscriptions", "/subscriptions/"])
+@pytest.mark.parametrize("method", ["GET", "POST"])
+async def test_collection_paths_require_authentication(context, path, method):
+    client, app, *_ = context
+    app.dependency_overrides.pop(get_current_user)
+    response = await client.request(method, path, json={"format": "singbox"})
+    assert response.status_code == 401
+    assert "SENTINEL" not in response.text
 
 
 @pytest.mark.anyio
