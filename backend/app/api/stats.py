@@ -2,7 +2,7 @@
 
 import asyncio
 import psutil
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,26 +85,17 @@ async def node_traffic_history(
     _=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Returns placeholder time-series — hook to real metrics collector"""
-    # In production: query InfluxDB / Prometheus / timescale
-    # Here: return mock structure so frontend renders correctly
+    """Report absent time-series collection without inventing measurements."""
     result = await db.execute(select(Node).where(Node.id == node_id))
     node = result.scalar_one_or_none()
     if not node:
         from fastapi import HTTPException
         raise HTTPException(404, "Node not found")
 
-    import random
-    base = datetime.utcnow()
-    points = []
-    for i in range(days * 24):
-        ts = base - timedelta(hours=days * 24 - i)
-        points.append({
-            "ts": ts.isoformat(),
-            "in_mbps":  round(random.uniform(0, 100), 2),
-            "out_mbps": round(random.uniform(0, 80),  2),
-        })
-    return {"node_id": node_id, "name": node.name, "points": points}
+    return {
+        "node_id": node_id, "name": node.name, "points": [], "available": False,
+        "reason": "Traffic history is not collected by this installation",
+    }
 
 
 @router.get("/system")

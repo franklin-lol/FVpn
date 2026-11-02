@@ -8,7 +8,7 @@ const api = axios.create({
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err.response?.status === 401) {
+    if (err.response?.status === 401 && !err.config?.skipAuthRedirect && err.config?.url !== "/api/auth/login") {
       localStorage.removeItem("fvpn-auth");
       window.location.href = "/login";
     }
@@ -42,6 +42,8 @@ export const protocolsApi = {
   list:      (nodeId) => api.get(`/api/protocols${nodeId ? `?node_id=${nodeId}` : ""}`),
   create:    (d)      => api.post("/api/protocols", d),
   delete:    (id)     => api.delete(`/api/protocols/${id}`),
+  update:    (id,d)   => api.patch(`/api/protocols/${id}`, d),
+  sync:      (nodeId) => api.post(`/api/protocols/sync/${nodeId}`),
   preview:   (d)      => api.post("/api/protocols/preview", d),
   supported: ()       => api.get("/api/protocols/supported"),
 };
@@ -58,3 +60,11 @@ export const statsApi = {
   system:      ()        => api.get("/api/stats/system"),
   nodeHistory: (id, days=7) => api.get(`/api/stats/nodes/${id}/history?days=${days}`),
 };
+
+export function apiError(error) {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return detail.map((item) => `${item.loc?.slice(1).join(".") || "Input"}: ${item.msg}`).join("; ");
+  if (detail?.message) return detail.message;
+  return error?.message || "Request failed";
+}

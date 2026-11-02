@@ -15,7 +15,7 @@ Plan: docs/implementation-plan.md
 
 - Phase 1: complete; 52 tests, changed-file Ruff, ShellCheck and bash -n passed. Real core checks passed including stdin and empty sets. Commit recorded in Git.
 - Phase 2: checks and independent review complete; commit recorded in Git.
-- Phase 3: pending.
+- Phase 3: complete; checks passed and commit recorded in Git.
 
 ## Phase 1 evidence and decisions
 
@@ -39,3 +39,19 @@ Plan: docs/implementation-plan.md
 - Final Python 3.12 verification: 177 tests passed; Ruff passed across backend, bot and tests. Existing dependency deprecation warnings remain.
 - Independent review identified inherited Nginx request logging and Uvicorn WebSocket query logging. Safe logging now overrides the inherited access format in every server. Sensitive-location Nginx errors omit raw URIs; two real upstream-failure requests retained status/timing without the synthetic token. Uvicorn filters cover real WebSocket hooks and access formatters.
 - Not tested: public-network deployment, actual Telegram delivery, production SSH peers or live firewall. No real environment or key files were read.
+
+## Phase 3 evidence and decisions
+
+- Published the 12-line Design Spec before editing UI; docs/ux-contract.md records the additive FastAPI and shared UI contracts.
+- Replaced the screens with one restrained Tailwind/CSS-token system: mobile navigation, light/dark/system theme, RU/EN, native focus-managed dialogs, labelled forms and recovery states. Added the missing PostCSS processing configuration without a new dependency.
+- Fresh databases receive a singleton setup-state table; existing administrators skip onboarding. The wizard verifies the current password, uses cancellation-safe bcrypt, prevents concurrent password replacement with a conditional update, reuses local credentials and completes only after validated application. Incomplete reused VLESS credentials fail without reseeding.
+- The bot retains access after a password change using short-lived standard HS256 tokens signed with the already-shared secret. Standalone password fallback remains available.
+- Subscription creation accepts the selected owner with object authorization. Public metadata exposes only token-scoped connection fields and no-store responses. The public guide includes platform/client choice, import/copy fallbacks, QR and three steps.
+- Removed random traffic charts/history and unenforced quota controls. Advanced protocol editing and explicit synchronous apply remain available; errors do not claim a successful deployment.
+- Confirmed and fixed parent deletion failures with existing child rows; transactional deletion preserves unrelated data and rolls back on failure. Local-node deletion is blocked to prevent leaving live listeners detached from the database.
+- Real sing-box client validation exposed obsolete DNS/routing/TUN fields. Generated clients now require sing-box 1.12+ and pass 1.13.13 without compatibility flags. New VMess entries persist one UUID shared by client/server; existing records are untouched.
+- Browser evidence: real disposable API/SQLite, first login -> wrong-password recovery -> password change -> local preset -> Users; subscription created through the UI belongs to the selected demo user. Anonymous public metadata has only the five declared fields and no-store. Invalid links have retry/recovery.
+- Browser evidence: 390px viewport without horizontal overflow; RU/EN and light/dark switching, QR rendering, import URL, modal focus and Escape checked. Final Login input labels target controls with no duplicate IDs. No public-page console errors observed.
+- Final Login Lighthouse snapshot: accessibility 100 and best practices 100; no accessibility findings. This is a single-screen automated check, not a whole-product WCAG certification. Indexing is disabled for the private panel.
+- Runtime backend Docker build and Node 20 npm ci/production build passed. Full Python suite: 240 tests passed; Ruff includes backend, bot, tests and tools. Actual Xray 1.8.24 and sing-box 1.13.13 accepted all generated server/client fixtures.
+- Scope retained: shared proxy credentials, no enforced quotas/traffic telemetry, manual remote delivery and first-contact SSH trust. The installer, firewall, renewal and host scripts were never executed; real VPN client import/traffic and external Telegram delivery remain unverified.

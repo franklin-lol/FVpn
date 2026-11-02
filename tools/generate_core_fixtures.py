@@ -12,7 +12,7 @@ from cryptography.x509.oid import NameOID
 
 from app.core.singbox import build_singbox_server_config
 from app.core.xray import build_xray_server_config
-from app.lib.config_generator import ProtocolConfig
+from app.lib.config_generator import ConfigGenerator, ProtocolConfig
 
 root = Path(sys.argv[1])
 root.mkdir(parents=True, exist_ok=True)
@@ -34,4 +34,12 @@ for index, protocol in enumerate(("vless", "trojan", "vmess", "hysteria2", "shad
 for core, builder in (("xray", build_xray_server_config), ("singbox", build_singbox_server_config)):
     (root / f"{core}.json").write_text(json.dumps(builder(protocols)))
     (root / f"{core}-empty.json").write_text(json.dumps(builder([])))
+
+# Exercise the actual client builder, including the paired ShadowTLS outbound.
+# WireGuard is deliberately absent: stored server keys are not client peers.
+client = ConfigGenerator(domain="fixture.invalid")
+for protocol in protocols:
+    client.add_protocol(protocol["name"], "fixture.invalid", protocol["port"],
+                        tag=f"fixture-{protocol['name']}", **protocol["config"])
+(root / "singbox-client.json").write_text(client.generate("singbox"))
 

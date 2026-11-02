@@ -5,7 +5,7 @@ import base64
 import json
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -24,12 +24,10 @@ def test_remote_force_sync_never_queues_local_apply(tmp_path, monkeypatch):
             node = Node(name="remote", host="127.0.0.1", meta={})
             db.add(node)
             await db.commit()
-            bg = BackgroundTasks()
             with pytest.raises(HTTPException) as error:
-                await protocols.force_sync(node.id, bg, None, db)
+                await protocols.force_sync(node.id, None, db)
             assert error.value.status_code == 409
             assert "manual_required" in str(error.value.detail)
-            assert not bg.tasks
         await engine.dispose()
 
     asyncio.run(scenario())

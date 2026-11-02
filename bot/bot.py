@@ -14,8 +14,13 @@ Commands:
 """
 
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import os
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Optional
 
@@ -49,6 +54,7 @@ API_URL  = os.environ.get("API_URL", "http://backend:8000")
 ADMIN_IDS = parse_admin_ids(os.environ.get("TELEGRAM_ADMIN_IDS", ""))
 BOT_USER  = os.environ.get("BOT_API_USER", "admin")
 BOT_PASS  = os.environ.get("BOT_API_PASS", os.environ.get("MASTER_PASSWORD", "admin"))
+JWT_SECRET = os.environ.get("JWT_SECRET", "")
 
 dp  = Dispatcher()
 
@@ -59,6 +65,24 @@ _jwt_token: Optional[str] = None
 
 async def get_token() -> str:
     global _jwt_token
+    if JWT_SECRET:
+        if len(JWT_SECRET.strip().encode("utf-8")) < 32 or JWT_SECRET.strip().lower() in {
+            "changeme-generate-with-openssl-rand-hex-32",
+            "change-me-generate-with-openssl-rand-hex-32",
+            "your-secret-key-change-in-production",
+        }:
+            raise RuntimeError("JWT_SECRET must be a private secret of at least 32 bytes")
+
+        def encoded(value: bytes) -> bytes:
+            return base64.urlsafe_b64encode(value).rstrip(b"=")
+
+        now = int(time.time())
+        header = encoded(b'{"alg":"HS256","typ":"JWT"}')
+        payload = encoded(json.dumps({"sub": BOT_USER, "iat": now, "exp": now + 600}, separators=(",", ":")).encode())
+        message = header + b"." + payload
+        signature = encoded(hmac.digest(JWT_SECRET.encode(), message, hashlib.sha256))
+        _jwt_token = (message + b"." + signature).decode("ascii")
+        return _jwt_token
     async with httpx.AsyncClient(base_url=API_URL, timeout=10) as c:
         r = await c.post("/api/auth/login",
                          data={"username": BOT_USER, "password": BOT_PASS},
@@ -319,8 +343,7 @@ async def cmd_logs(event):
     msg = event if isinstance(event, Message) else event.message
     try:
         async with httpx.AsyncClient(base_url=API_URL, timeout=15) as c:
-            if not _jwt_token:
-                await get_token()
+            await get_token()
             r = await c.get("/api/system/logs/uniproxy?lines=30",
                             headers={"Authorization": f"Bearer {_jwt_token}"})
             r.raise_for_status()
@@ -340,8 +363,7 @@ async def cmd_logs(event):
 async def cmd_cert(msg: Message):
     try:
         async with httpx.AsyncClient(base_url=API_URL, timeout=20) as c:
-            if not _jwt_token:
-                await get_token()
+            await get_token()
             r = await c.get("/api/system/cert/status",
                             headers={"Authorization": f"Bearer {_jwt_token}"})
             r.raise_for_status()

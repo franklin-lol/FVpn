@@ -6,7 +6,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, DateTime, Float, ForeignKey, Integer,
-    String, Text, JSON, func, BigInteger
+    String, Text, JSON, func, BigInteger, CheckConstraint
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -106,3 +106,13 @@ class EventLog(Base):
     message:    Mapped[str]          = mapped_column(Text)
     meta:       Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime]     = mapped_column(DateTime, default=func.now())
+
+
+class SetupState(Base):
+    __tablename__ = "setup_state"
+    __table_args__ = (CheckConstraint("id = 1", name="setup_state_singleton"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    admin_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    required: Mapped[bool] = mapped_column(Boolean, default=True)
+    password_changed: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -16,6 +16,10 @@ The installer prepares the checkout, fills missing or empty required environment
 
 The panel uses **HTTPS on port 2095**. A public IP uses a self-signed certificate, which requires a browser exception. A domain can use Let's Encrypt when DNS and inbound port 80 are available. TCP port 443 belongs to the proxy core, not the panel.
 
+On a new database, sign in as `admin` with the installer password. The first-run guide changes that password, reuses the local server and applies the recommended VLESS Reality preset. Existing installations open the dashboard directly. Advanced protocol options remain available under Connections; saving parameters and applying them are separate operations with an explicit result.
+
+Open Users, choose a person and create a connection link. Share its `/s/…` guide page: it offers a QR, device/app selection, an import button and three setup steps. The interface supports Russian/English, light/dark/system themes and phone layouts. Subscription links are bearer secrets; anyone with one can download its configuration.
+
 Keep `.env`, `/etc/fvpn/env`, private keys and backups private. Environment files use mode 600. Do not commit them. Changing `MASTER_PASSWORD` does not reset an existing database user's password. Changing `JWT_SECRET` signs out existing sessions. Empty, short (under 32 bytes) and known example JWT secrets are rejected at startup; generate your own value.
 
 ## Manual configuration
@@ -45,6 +49,8 @@ Existing installations retain their SQLite data in the `backend-data` volume. Ne
 
 The server builders cover seven protocol families; client formats support different subsets. Do not infer device compatibility from the number of names in the interface. Core configuration is checked against the installed image before replacement. Failed application restores the previous files and attempts to recover the affected cores.
 
+Generated sing-box/Hiddify client JSON uses the sing-box **1.12+** DNS, routing and TUN schema; use a client bundling that core or newer. Validation uses the pinned sing-box 1.13.13 image. Other clients can use URI/base64 or Clash-compatible formats when supported by their protocols. Import buttons depend on an installed application; copying the URL remains available.
+
 WireGuard is excluded from all client exports until separate client keys are implemented. Existing database records are preserved. A subscription with no supported active configuration returns an explicit error.
 
 ## Nodes and subscriptions
@@ -61,7 +67,7 @@ Traffic limits are stored metadata. Quotas, per-user traffic accounting and conn
 
 Ports 8000 and 2096 bind only to server loopback; use the HTTPS panel port for remote administration and subscriptions. Nginx overwrites client IP headers, and the single backend worker trusts only `TRUSTED_PROXY_IPS` (the fixed Compose Nginx address by default). Preserve that pairing if changing the Docker network. Login attempts are bounded independently by account and real client IP; limits reset on backend restart.
 
-Empty or legacy `CORS_ORIGINS=*` derives the panel HTTPS origin from `DOMAIN` and `PANEL_PORT`. Set explicit comma-separated or JSON origins only when hosting the frontend separately. A configured Telegram bot requires `TELEGRAM_ADMIN_IDS`; an empty list fails startup and never grants access. Keep bot API credentials synchronized if changing its account password.
+Empty or legacy `CORS_ORIGINS=*` derives the panel HTTPS origin from `DOMAIN` and `PANEL_PORT`. Set explicit comma-separated or JSON origins only when hosting the frontend separately. A configured Telegram bot requires `TELEGRAM_ADMIN_IDS`; an empty list fails startup and never grants access. In Compose the bot uses short-lived bearer tokens signed with the already-shared JWT secret, so changing the admin password does not disable it. A separately deployed bot without that secret uses `BOT_API_USER`/`BOT_API_PASS` (legacy fallback: `MASTER_PASSWORD`); keep that password synchronized.
 
 Runtime images are pinned by digest and frontend dependencies by `package-lock.json`. Update them deliberately with the checks below; core images are excluded from unattended Watchtower updates. The backend still has Docker socket access for local core control; deploy the panel only on a trusted personal server and restrict administrator access.
 
@@ -75,7 +81,7 @@ docker compose exec -T backend python -m app.core.backup --verify /data/backups/
 docker compose cp backend:/data/backups/ARCHIVE.tar.gz ./ARCHIVE.tar.gz
 ```
 
-Backups contain unencrypted credentials. Keep `.env` and ACME account/renewal state separately in trusted storage: they are not included. Configuration symlinks are rejected; the installer publishes ordinary TLS files. Optional S3 upload is performed by the host wrapper and requires the host AWS CLI and its separately configured credentials. The API creates a local archive only.
+Backups contain unencrypted credentials. Keep `.env`, `/data/ssh_known_hosts` and ACME account/renewal state separately in trusted storage: they are not included. Preserve the SSH pins when restoring a server. Configuration symlinks are rejected; the installer publishes ordinary TLS files. Optional S3 upload is performed by the host wrapper and requires the host AWS CLI and its separately configured credentials. The API creates a local archive only.
 
 For recovery, stop application writers, verify the archive, restore its `database/fvpn.db` and required configuration into a separate location first, and keep the old volume intact until recovery has been tested. Never overwrite a running SQLite file or leave unrelated old WAL/SHM files beside a restored database.
 

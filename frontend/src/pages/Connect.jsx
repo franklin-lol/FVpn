@@ -1,0 +1,39 @@
+import React, { useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
+import QRCode from "react-qr-code";
+import { ArrowDownToLine, ArrowUpRight, Check, Link2, ShieldCheck, Smartphone } from "lucide-react";
+import api from "../utils/api";
+import useRemote from "../utils/useRemote";
+import { useI18n } from "../store";
+import { Badge, Button, Card, CopyButton, ErrorState, Field, Loading } from "../components/ui";
+import { PreferencesControls } from "../components/Layout";
+
+function detectedPlatform() {
+  const agent = navigator.userAgent;
+  if (/Android/i.test(agent)) return "android";
+  if (/iPhone|iPad|iPod/i.test(agent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "ios";
+  return "desktop";
+}
+export default function Connect() {
+  const { token } = useParams();
+  const { t, language } = useI18n();
+  const { data, loading, error, reload } = useRemote(async () => (await api.get(`/api/subscriptions/info/${encodeURIComponent(token)}`, { skipAuthRedirect: true, headers: { Authorization: undefined } })).data, [token]);
+  const [platform, setPlatform] = useState(detectedPlatform);
+  const [client, setClient] = useState("hiddify");
+  const [attempted, setAttempted] = useState(false);
+  const clients = useMemo(() => {
+    if (!data) return [];
+    const list = [];
+    if (data.available_formats.includes("hiddify")) list.push({ id: "hiddify", label: "Hiddify", format: "hiddify", download: "https://hiddify.com/app/", scheme: "hiddify://import/" });
+    if (platform === "android" && data.available_formats.includes("v2rayng")) list.push({ id: "v2rayng", label: "v2rayNG", format: "v2rayng", download: "https://github.com/2dust/v2rayNG/releases", scheme: "v2rayng://install-config?url=" });
+    if (platform === "ios" && data.available_formats.includes("shadowrocket")) list.push({ id: "shadowrocket", label: "Shadowrocket", format: "shadowrocket", download: "https://apps.apple.com/app/shadowrocket/id932747118", scheme: null });
+    return list;
+  }, [data, platform]);
+  const selected = clients.find((item) => item.id === client) || clients[0];
+  const url = data && selected ? (() => { const value = new URL(data.url); value.searchParams.set("format", selected.format); return value.href; })() : data?.url;
+  const importLink = selected?.scheme ? `${selected.scheme}${encodeURIComponent(url)}` : null;
+  return <div className="min-h-dvh"><header className="mx-auto flex max-w-5xl items-center justify-between p-4 sm:p-6"><span className="flex items-center gap-2 font-semibold"><ShieldCheck size={24} className="text-accent" />FVpn</span><PreferencesControls /></header><main className="mx-auto max-w-4xl space-y-6 px-4 pb-12 pt-5 sm:px-8 sm:pt-10"><div className="space-y-3"><Badge variant="accent">{t("Личная ссылка подключения", "Your private connection link")}</Badge><h1>{t("Ваше подключение готово.", "Your connection is ready.")}</h1><p className="muted max-w-xl">{t("Установите приложение, добавьте настройки и включите подключение.", "Install an app, add your settings and connect.")}</p></div>{loading ? <Loading /> : error ? <ErrorState message={t("Ссылка недоступна. Проверьте адрес или попросите администратора обновить доступ.", "This link is unavailable. Check the address or ask your administrator to renew access.")} onRetry={reload} /> : !data.available_formats.length ? <ErrorState message={t("На сервере пока нет совместимых подключений. Обратитесь к администратору.", "No compatible connections are available. Contact your administrator.")} onRetry={reload} /> : <>
+    <div className="grid items-start gap-6 md:grid-cols-[1.35fr_1fr]"><Card className="space-y-6"><div className="flex items-center gap-3"><div className="step-number">1</div><h2>{t("Установите приложение", "Install an app")}</h2></div><Field label={t("Ваше устройство", "Your device")}><select className="input" value={platform} onChange={(e) => { setPlatform(e.target.value); setAttempted(false); }}><option value="android">Android</option><option value="ios">iPhone / iPad</option><option value="desktop">Windows / macOS / Linux</option></select></Field>{selected && <><Field label={t("Приложение", "App")}><select className="input" value={selected.id} onChange={(e) => { setClient(e.target.value); setAttempted(false); }}>{clients.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></Field><a href={selected.download} className="btn btn-secondary" target="_blank" rel="noreferrer">{t("Скачать", "Download")} {selected.label}<ArrowUpRight size={16} /></a></>}<div className="divider" /><div className="flex items-center gap-3"><div className="step-number">2</div><h2>{t("Добавьте настройки", "Add your settings")}</h2></div>{importLink ? <a className="btn btn-primary w-full" href={importLink} onClick={() => setAttempted(true)}><ArrowDownToLine size={18} />{t("Открыть в", "Open in")} {selected.label}</a> : <p className="muted text-sm">{t("Скопируйте ссылку ниже. В приложении выберите импорт подписки по ссылке.", "Copy the link below. In your app, choose import subscription from URL.")}</p>}{attempted && <p role="status" className="notice">{t("Если приложение не открылось, установите его или скопируйте ссылку ниже и импортируйте вручную.", "If the app did not open, install it or copy the link below and import it manually.")}</p>}<CopyButton text={url}>{t("Копировать ссылку настроек", "Copy settings link")}</CopyButton><div className="divider" /><div className="flex items-center gap-3"><div className="step-number">3</div><h2>{t("Включите подключение", "Connect")}</h2></div><p className="muted text-sm">{t("В приложении выберите добавленный профиль и нажмите кнопку подключения. Разрешите создание VPN-соединения, если система спросит.", "Select your new profile and tap connect. Allow the VPN connection if your system asks.")}</p></Card><div className="space-y-6"><Card className="space-y-5 text-center"><h2>{t("Открыть на другом устройстве", "Use another device")}</h2><div className="mx-auto flex w-fit rounded-xl bg-white p-4"><QRCode value={data.connect_url} size={180} /></div><p className="muted text-sm">{t("Наведите камеру телефона — откроется эта инструкция.", "Scan with your phone camera to open this guide.")}</p><CopyButton text={data.connect_url} className="flex justify-center">{t("Поделиться инструкцией", "Copy guide link")}</CopyButton></Card><div className="notice space-y-2"><p className="font-semibold">{t("Храните ссылку приватно", "Keep this link private")}</p><p>{t("Любой, у кого есть ссылка, может скачать настройки подключения.", "Anyone with this link can download your connection settings.")}</p>{data.expires_at && <p>{t("Действует до", "Valid until")} {new Date(data.expires_at).toLocaleDateString(language)}</p>}</div></div></div>
+    <details className="card"><summary>{t("Ручной импорт и другие форматы", "Manual import and other formats")}</summary><div className="mt-4 space-y-4"><Field label={t("Ссылка для приложения", "App subscription URL")}><input className="input mono" readOnly value={url} onFocus={(e) => e.target.select()} /></Field><div className="flex flex-wrap gap-2">{data.available_formats.map((format) => { const link = new URL(data.url); link.searchParams.set("format", format); return <a key={format} className="btn btn-secondary" href={link.href} download={`fvpn-${format}`}>{format}<ArrowDownToLine size={16} /></a>; })}</div><p className="muted text-xs">{t("Поддержка протоколов зависит от приложения. Если профиль не импортируется, попробуйте Hiddify или обратитесь к администратору.", "Protocol support varies by app. If import fails, try Hiddify or contact your administrator.")}</p></div></details>
+  </>}</main></div>;
+}

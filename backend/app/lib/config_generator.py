@@ -55,6 +55,7 @@ class ProtocolConfig:
             "shadowsocks": {"method": "aes-256-gcm", "password": secrets.token_hex(16)},
             "shadowtls":   {"password": secrets.token_hex(16), "sni": "www.apple.com", "version": 3},
             "vless":       {**ProtocolConfig._reality_keypair(), "uuid": str(uuid.uuid4()), "flow": "xtls-rprx-vision", "sni": "ya.ru", "short_id": secrets.token_hex(4)},
+            "vmess":       {"uuid": str(uuid.uuid4()), "path": "/vmess", "sni": "your-domain.com", "tls_insecure": False},
             "trojan":      {"password": secrets.token_hex(16), "sni": "your-domain.com", "tls_insecure": False},
             "tuic":        {"uuid": str(uuid.uuid4()), "password": secrets.token_hex(16), "congestion": "bbr"},
             "wireguard":   {"private_key": "", "public_key": "", "preshared_key": "", "dns": "1.1.1.1,8.8.8.8", "mtu": 1420},
@@ -201,15 +202,13 @@ class ConfigGenerator:
         # Built-ins
         outbounds += [
             {"type": "direct", "tag": "direct"},
-            {"type": "block",  "tag": "block"},
-            {"type": "dns",    "tag": "dns-out"},
         ]
 
         config = {
             "log":    {"level": "info", "timestamp": True},
             "dns":    self._singbox_dns(),
             "inbounds": [
-                {"type": "tun",   "tag": "tun-in",  "inet4_address": "172.19.0.1/30", "auto_route": True, "strict_route": True},
+                {"type": "tun",   "tag": "tun-in",  "address": ["172.19.0.1/30"], "auto_route": True, "strict_route": True},
                 {"type": "socks", "tag": "socks-in", "listen": "127.0.0.1", "listen_port": 2080},
                 {"type": "http",  "tag": "http-in",  "listen": "127.0.0.1", "listen_port": 2081},
                 {"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 2082},
@@ -239,6 +238,15 @@ class ConfigGenerator:
                     "method": e.get("method", "aes-256-gcm"),
                     "password": e.get("password", ""),
                     "detour": f"{p.tag}-shadowtls"}
+
+        if p.proto == "vmess":
+            if not e.get("uuid"):
+                return None
+            return {**base, "type": "vmess", "uuid": e["uuid"],
+                    "security": "auto", "alter_id": 0,
+                    "tls": {"enabled": True, "server_name": e.get("sni", p.host),
+                            "insecure": e.get("tls_insecure", False)},
+                    "transport": {"type": "ws", "path": e.get("path", "/vmess")}}
 
         if p.proto in ("vless", "vlessreality"):
             return {**base, "type": "vless",
@@ -273,17 +281,10 @@ class ConfigGenerator:
     def _singbox_dns(self) -> dict:
         return {
             "servers": [
-                {"tag": "dns-remote", "address": "https://1.1.1.1/dns-query", "strategy": "prefer_ipv4"},
-                {"tag": "dns-local",  "address": "local", "detour": "direct"},
-                {"tag": "dns-block",  "address": "rcode://success"},
-            ],
-            "rules": [
-                {"rule_set": "geosite-ads", "server": "dns-block"},
-                {"outbound": "any", "server": "dns-local"},
-                {"rule_set": "geosite-geolocation-!cn", "server": "dns-remote"},
+                {"type": "https", "tag": "dns-remote", "server": "1.1.1.1", "path": "/dns-query"},
+                {"type": "local", "tag": "dns-local"},
             ],
             "final": "dns-remote",
-            "independent_cache": True,
         }
 
     def _singbox_route(self) -> dict:
@@ -295,11 +296,12 @@ class ConfigGenerator:
                  "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-not-cn.srs"},
             ],
             "rules": [
-                {"protocol": "dns", "outbound": "dns-out"},
-                {"rule_set": "geosite-ads", "outbound": "block"},
+                {"protocol": "dns", "action": "hijack-dns"},
+                {"rule_set": "geosite-ads", "action": "reject"},
                 {"rule_set": "geosite-geolocation-!cn", "outbound": "proxy"},
             ],
             "final": "direct",
+            "default_domain_resolver": "dns-local",
             "auto_detect_interface": True,
         }
 
@@ -354,6 +356,14 @@ class ConfigGenerator:
     def _clash_proxy(self, p: ProxyEntry) -> Optional[dict]:
         base = {"name": p.tag, "server": p.host, "port": p.port}
         e = p.extra
+
+        if p.proto == "vmess":
+            if not e.get("uuid"):
+                return None
+            return {**base, "type": "vmess", "uuid": e["uuid"], "alterId": 0,
+                    "cipher": "auto", "tls": True, "servername": e.get("sni", p.host),
+                    "skip-cert-verify": e.get("tls_insecure", False), "network": "ws",
+                    "ws-opts": {"path": e.get("path", "/vmess")}}
 
         if p.proto == "hysteria2":
             return {**base, "type": "hysteria2",
@@ -446,6 +456,17 @@ class ConfigGenerator:
     def _uri(self, p: ProxyEntry) -> Optional[str]:
         e = p.extra
         tag = p.tag
+
+        if p.proto == "vmess":
+            if not e.get("uuid"):
+                return None
+            payload = {
+                "v": "2", "ps": tag, "add": p.host, "port": str(p.port),
+                "id": e["uuid"], "aid": "0", "scy": "auto", "net": "ws", "type": "none",
+                "host": e.get("sni", p.host), "path": e.get("path", "/vmess"),
+                "tls": "tls", "sni": e.get("sni", p.host),
+            }
+            return "vmess://" + base64.b64encode(json.dumps(payload).encode()).decode()
 
         if p.proto == "shadowsocks":
             user_info = base64.b64encode(f"{e.get('method','aes-256-gcm')}:{e.get('password','')}".encode()).decode()

@@ -208,7 +208,6 @@ async def preview_config(
 @router.post("/sync/{node_id}")
 async def force_sync(
     node_id: int,
-    bg: BackgroundTasks,
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -216,11 +215,16 @@ async def force_sync(
     node = node_res.scalar_one_or_none()
     if not node:
         raise HTTPException(404, "Node not found")
-    from app.core.config_writer import is_local_node
+    from app.core.config_writer import is_local_node, sync_node_config
     if not is_local_node(node):
         raise HTTPException(409, {"status": "manual_required", "message": "Export and apply remote configuration manually"})
-    bg.add_task(_sync_node, node_id)
-    return {"message": f"Config sync triggered for node {node_id}"}
+    result = await sync_node_config(node_id)
+    if result.get("status") != "applied":
+        raise HTTPException(409, {
+            "status": result.get("status", "apply_failed"),
+            "message": "Configuration was not applied; verify protocol settings and core availability, then retry",
+        })
+    return result
 
 
 @router.get("/supported")
@@ -231,10 +235,9 @@ async def supported_protocols(_: User = Depends(require_admin)):
             {"name": "shadowsocks",  "core": "both",     "description": "SS-2022 + aes-256-gcm"},
             {"name": "shadowtls",    "core": "sing-box", "description": "TLS SNI camouflage v3"},
             {"name": "vless",        "core": "xray",     "description": "XTLS-Vision + Reality"},
+            {"name": "vmess",        "core": "xray",     "description": "VMess over TLS WebSocket"},
             {"name": "trojan",       "core": "xray",     "description": "HTTPS traffic mimicry"},
             {"name": "tuic",         "core": "sing-box", "description": "QUIC, BBR, 0-RTT"},
-            {"name": "wireguard",    "core": "sing-box", "description": "ChaCha20-Poly1305 VPN"},
-            {"name": "ssh",          "core": "xray",     "description": "Legacy SSH tunnel"},
         ],
         "formats": ["singbox", "clash", "hiddify", "shadowrocket", "v2rayng", "base64"],
     }

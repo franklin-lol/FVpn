@@ -5,11 +5,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import User
+from app.models import SetupState, Subscription, User
 from app.core.security import async_hash_password
 from app.api.auth import get_current_user, require_admin
 
@@ -132,15 +132,28 @@ async def update_user(
 @router.delete("/{user_id}", status_code=204)
 async def delete_user(
     user_id: int,
-    _: User = Depends(require_admin),
+    current: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    await db.delete(user)
-    await db.commit()
+    if user.id == current.id:
+        raise HTTPException(status_code=403, detail="Cannot delete your own account")
+    setup = (await db.execute(select(SetupState).where(SetupState.admin_user_id == user_id))).scalar_one_or_none()
+    if setup is not None and setup.required:
+        raise HTTPException(status_code=403, detail="Complete initial setup before deleting its administrator")
+    try:
+        # Explicit child deletion also works on existing SQLite connections
+        # without foreign_keys enabled; one commit preserves atomic rollback.
+        await db.execute(delete(Subscription).where(Subscription.user_id == user_id))
+        await db.execute(delete(SetupState).where(SetupState.admin_user_id == user_id))
+        await db.delete(user)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 @router.post("/{user_id}/reset-traffic", response_model=UserOut)

@@ -37,3 +37,15 @@ export const useStatsStore = create((set) => ({
   live: null,
   setLive: (data) => set({ live: data }),
 }));
+
+export const usePreferences = create(persist((set) => ({
+  language: "ru",
+  theme: "system",
+  setLanguage: (language) => set({ language: language === "en" ? "en" : "ru" }),
+  setTheme: (theme) => set({ theme: ["light", "dark", "system"].includes(theme) ? theme : "system" }),
+}), { name: "fvpn-preferences" }));
+
+export function useI18n() {
+  const language = usePreferences((state) => state.language);
+  return { language, t: (russian, english) => language === "en" ? english : russian };
+}

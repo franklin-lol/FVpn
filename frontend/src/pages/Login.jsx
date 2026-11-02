@@ -1,99 +1,24 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Zap } from "lucide-react";
-import { useAuthStore } from "../store";
-import toast from "react-hot-toast";
+import React, { useState } from "react";
+import { Navigate } from "react-router-dom";
+import { ArrowRight, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { useAuthStore, useI18n } from "../store";
+import { Button, Card, Field } from "../components/ui";
+import { PreferencesControls } from "../components/Layout";
 
 export default function Login() {
-  const [form,    setForm]    = useState({ username:"", password:"" });
-  const [show,    setShow]    = useState(false);
-  const [loading, setLoading] = useState(false);
-  const login    = useAuthStore((s) => s.login);
-  const token    = useAuthStore((s) => s.token);
-  const navigate = useNavigate();
-
-  useEffect(() => { if (token) navigate("/dashboard"); }, [token, navigate]);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!form.username || !form.password) { toast.error("Fill all fields"); return; }
-    setLoading(true);
-    try {
-      await login(form.username, form.password);
-      navigate("/dashboard");
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Invalid credentials");
-    } finally { setLoading(false); }
+  const { t } = useI18n();
+  const { token, login } = useAuthStore();
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (token) return <Navigate to="/" replace />;
+  const submit = async (event) => {
+    event.preventDefault(); setBusy(true); setError("");
+    try { await login(username, password); }
+    catch (error) { setError(error.response?.status === 429 ? t("Слишком много попыток. Повторите через 15 минут.", "Too many attempts. Try again in 15 minutes.") : error.response?.status === 401 ? t("Проверьте имя и пароль и повторите.", "Check your username and password and try again.") : t("Сервер недоступен. Проверьте соединение и повторите.", "Server unavailable. Check your connection and try again.")); }
+    finally { setBusy(false); }
   };
-
-  return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
-      background:"var(--bg)", padding:16, position:"relative", overflow:"hidden" }}>
-      {/* Grid bg */}
-      <div style={{ position:"absolute", inset:0, pointerEvents:"none",
-        backgroundImage:"linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)",
-        backgroundSize:"52px 52px", opacity:.35 }} />
-      {/* Glow */}
-      <div style={{ position:"absolute", width:600, height:600, borderRadius:"50%", pointerEvents:"none",
-        background:"radial-gradient(ellipse,rgba(0,212,255,.05) 0%,transparent 70%)",
-        top:"50%", left:"50%", transform:"translate(-50%,-50%)" }} />
-
-      <div className="fade-in" style={{ position:"relative", width:"100%", maxWidth:380 }}>
-        <div style={{ background:"var(--card)", border:"1px solid var(--border-light)", borderRadius:16,
-          padding:32, boxShadow:"0 32px 80px rgba(0,0,0,.55),0 0 0 1px rgba(0,212,255,.04) inset" }}>
-
-          {/* Logo */}
-          <div style={{ textAlign:"center", marginBottom:32 }}>
-            <div style={{ width:50, height:50, borderRadius:14, margin:"0 auto 14px",
-              background:"linear-gradient(135deg,rgba(0,212,255,.15),rgba(124,58,237,.15))",
-              border:"1px solid rgba(0,212,255,.22)",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              boxShadow:"0 0 28px rgba(0,212,255,.1)" }}>
-              <Zap size={22} style={{ color:"var(--cyan)" }} />
-            </div>
-            <div style={{ fontFamily:"JetBrains Mono,monospace", fontWeight:700, fontSize:22,
-              color:"var(--cyan)", letterSpacing:".08em", textShadow:"0 0 22px rgba(0,212,255,.35)" }}>
-              FVpn
-            </div>
-            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:4, letterSpacing:".04em" }}>
-              Proxy Management Panel
-            </div>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:14 }}>
-            <div className="field">
-              <label className="label field-label">Username</label>
-              <input className="input" type="text" autoComplete="username"
-                placeholder="admin" value={form.username} autoFocus
-                onChange={(e) => setForm({ ...form, username:e.target.value })} />
-            </div>
-            <div className="field">
-              <label className="label field-label">Password</label>
-              <div style={{ position:"relative" }}>
-                <input className="input" type={show?"text":"password"} autoComplete="current-password"
-                  placeholder="••••••••" value={form.password} style={{ paddingRight:40 }}
-                  onChange={(e) => setForm({ ...form, password:e.target.value })} />
-                <button type="button" className="btn-icon"
-                  style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", border:"none" }}
-                  onClick={() => setShow(!show)}>
-                  {show ? <EyeOff size={14}/> : <Eye size={14}/>}
-                </button>
-              </div>
-            </div>
-            <button type="submit" disabled={loading}
-              className="btn btn-primary btn-lg"
-              style={{ marginTop:6, width:"100%", justifyContent:"center" }}>
-              {loading ? <><div className="btn-spinner"/>Signing in…</> : "Sign in"}
-            </button>
-          </form>
-
-          <div style={{ marginTop:22, textAlign:"center", fontFamily:"JetBrains Mono,monospace",
-            fontSize:10, color:"var(--text-dim)", letterSpacing:".04em" }}>
-            github.com/franklin-lol/FVpn
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="min-h-dvh"><header className="flex justify-end p-4 sm:p-6"><PreferencesControls /></header><main className="mx-auto grid max-w-5xl gap-10 px-4 pb-12 pt-8 sm:px-8 lg:grid-cols-2 lg:items-center lg:gap-20 lg:pt-20"><div className="space-y-6"><div className="icon-box !h-14 !w-14"><ShieldCheck size={30} /></div><span className="badge badge-accent">FVpn · {t("Личный сервер", "Personal server")}</span><h1 className="max-w-md !text-4xl leading-tight sm:!text-5xl">{t("Подключение под вашим контролем.", "Your connection, in your control.")}</h1><p className="muted max-w-md leading-relaxed">{t("Настройте сервер, подключите устройства и управляйте доступом в одном месте.", "Set up your server, connect devices and manage access in one place.")}</p><p className="muted text-xs">Xray · sing-box · {t("На вашем сервере", "Self-hosted")}</p></div><Card className="space-y-6"><div><h2>{t("Войти в панель", "Sign in to your panel")}</h2><p className="muted mt-2 text-sm">{t("При первом входе используйте данные установщика.", "Use the installer credentials for your first sign-in.")}</p></div><form onSubmit={submit} className="space-y-5"><Field label={t("Имя пользователя", "Username")}><input className="input" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required autoFocus /></Field><Field label={t("Пароль", "Password")}><div className="relative"><input id="login-password" aria-label={t("Пароль", "Password")} className="input pr-14" autoComplete="current-password" type={show ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required /><button type="button" className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center muted" aria-label={t("Показать или скрыть пароль", "Show or hide password")} onClick={() => setShow(!show)}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></Field>{error && <p role="alert" className="notice notice-danger">{error}</p>}<Button type="submit" loading={busy} icon={ArrowRight} className="w-full">{t("Войти", "Sign in")}</Button></form></Card></main></div>;
 }

@@ -8,14 +8,14 @@ from ipaddress import ip_address
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.config import settings
-from app.models import User
-from app.core.security import async_verify_password, create_access_token, decode_token
-from pydantic import BaseModel
+from app.models import SetupState, User
+from app.core.security import async_hash_password, async_verify_password, create_access_token, decode_token
+from pydantic import BaseModel, SecretStr
 
 router = APIRouter()
 oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -177,3 +177,50 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin required")
     return user
+
+
+class PasswordChange(BaseModel):
+    model_config = {"extra": "forbid"}
+    current_password: SecretStr
+    new_password: SecretStr
+
+
+@router.post("/password")
+async def change_password(
+    data: PasswordChange,
+    request: Request,
+    current: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    password = data.new_password.get_secret_value()
+    if len(password) < 12 or len(password.encode("utf-8")) > 72:
+        raise HTTPException(422, "New password must have at least 12 characters and at most 72 UTF-8 bytes")
+    if password == data.current_password.get_secret_value():
+        raise HTTPException(422, "Choose a new password different from the current password")
+    attempt = _limiter.reserve(_client_ip(request), current.username)
+    try:
+        valid = await async_verify_password(data.current_password.get_secret_value(), current.hashed_password)
+        if valid:
+            hashed = await async_hash_password(password)
+    except BaseException:
+        _limiter.release(attempt)
+        raise
+    if not valid:
+        attempt.failed = True
+        raise HTTPException(401, "Current password is incorrect")
+    # Compare the verified hash in SQL so overlapping changes cannot silently
+    # replace a password which changed while bcrypt ran in a worker thread.
+    changed = await db.execute(update(User).where(
+        User.id == current.id, User.is_active.is_(True),
+        User.hashed_password == current.hashed_password,
+    ).values(hashed_password=hashed).execution_options(synchronize_session=False))
+    if changed.rowcount != 1:
+        await db.rollback()
+        _limiter.release(attempt)
+        raise HTTPException(409, "Password changed during this request; sign in again and retry")
+    state = await db.get(SetupState, 1)
+    if state is not None and state.required and current.is_admin and state.admin_user_id == current.id:
+        state.password_changed = True
+    await db.commit()
+    _limiter.release(attempt, success=True)
+    return {"status": "password_changed"}

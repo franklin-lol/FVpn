@@ -9,7 +9,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field, JsonValue, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -160,8 +160,19 @@ async def delete_node(
     node = result.scalar_one_or_none()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
-    await db.delete(node)
-    await db.commit()
+    from app.core.config_writer import is_local_node
+    if is_local_node(node):
+        raise HTTPException(
+            status_code=409,
+            detail="The local node cannot be deleted. Disable or delete its protocols, then apply the empty configuration to stop listeners.",
+        )
+    try:
+        await db.execute(delete(Protocol).where(Protocol.node_id == node_id))
+        await db.delete(node)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 
 @router.post("/{node_id}/check")

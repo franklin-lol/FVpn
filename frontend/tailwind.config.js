@@ -4,7 +4,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        cyan: { 400: "#00d4ff", 950: "#001a22" },
+        canvas: "var(--bg)", surface: "var(--surface)", muted: "var(--muted)",
+        ink: "var(--text)", accent: "var(--accent)", line: "var(--border)",
       },
       fontFamily: {
         mono: ['"JetBrains Mono"', "monospace"],

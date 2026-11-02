@@ -40,11 +40,13 @@ async def init_db():
             if "already exists" not in str(e).lower():
                 raise
 
-    from app.models import User
+    from app.models import SetupState, User
     from app.core.security import async_hash_password
     from sqlalchemy import select
 
     async with SessionLocal() as session:
+        # Existing installations without state remain configured.
+        fresh = (await session.execute(select(User.id).limit(1))).first() is None
         result = await session.execute(select(User).where(User.username == "admin"))
         if not result.scalar_one_or_none():
             admin = User(
@@ -55,9 +57,12 @@ async def init_db():
                 is_active=True,
             )
             session.add(admin)
+            await session.flush()
+            if fresh and await session.get(SetupState, 1) is None:
+                session.add(SetupState(id=1, admin_user_id=admin.id))
             await session.commit()
 
-    # One-time: seed a "Local Server" node with 4 ready-to-use protocols so
+    # One-time: seed a local node with the two recommended starter protocols so
     # the proxy stack works immediately after install, with zero manual
     # SSH/Auto-Setup steps. Safe to call on every boot — it's a no-op after
     # the first successful run (see app/core/bootstrap.py for details).

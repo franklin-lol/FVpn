@@ -1,0 +1,4 @@
+FROM fvpn-checks AS checks
+COPY --from=fvpn-frontend-phase3 /usr/share/nginx/html /ui
+COPY tools/serve_ui_fixture.py /workspace/tools/serve_ui_fixture.py
+CMD ["python", "/workspace/tools/serve_ui_fixture.py"]

@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import SessionLocal, init_db
-from app.api import auth, users, nodes, protocols, subscriptions, stats, system
+from app.api import auth, users, nodes, protocols, subscriptions, stats, system, setup
 from app.core.monitor import MonitorService
 from app.core.self_heal import SelfHealService
 from app.core.security import decode_token
@@ -143,6 +143,7 @@ app.include_router(protocols.router,     prefix="/api/protocols",     tags=["Pro
 app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Subscriptions"])
 app.include_router(stats.router,         prefix="/api/stats",         tags=["Stats"])
 app.include_router(system.router,        prefix="/api/system",        tags=["System"])
+app.include_router(setup.router,         prefix="/api/setup",         tags=["Setup"])
 
 
 @app.get("/health")
