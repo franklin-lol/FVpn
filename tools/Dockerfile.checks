@@ -1,0 +1,19 @@
+FROM python:3.12-slim AS dependencies
+WORKDIR /workspace
+COPY backend/requirements.txt /tmp/backend-requirements.txt
+COPY bot/requirements.txt /tmp/bot-requirements.txt
+COPY requirements-dev.txt /tmp/dev-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/backend-requirements.txt -r /tmp/bot-requirements.txt -r /tmp/dev-requirements.txt
+
+FROM dependencies AS checks
+COPY backend /workspace/backend
+COPY bot /workspace/bot
+COPY tests /workspace/tests
+COPY tools/generate_core_fixtures.py /workspace/tools/generate_core_fixtures.py
+ENV PYTHONPATH=/workspace/backend:/workspace
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV JWT_SECRET=fixture-only-secret-at-least-thirty-two-bytes
+ENV MASTER_PASSWORD=fixture-only-password
+ENV DATABASE_URL=sqlite+aiosqlite:////tmp/fvpn-tests.db
+CMD ["pytest", "-q", "-p", "no:cacheprovider", "/workspace/tests"]
+

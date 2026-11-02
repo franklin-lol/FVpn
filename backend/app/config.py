@@ -18,10 +18,6 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:////data/fvpn.db"
 
-    # Redis
-    REDIS_URL: str = "redis://redis:6379/0"
-    REDIS_PASSWORD: str = "fvpn"
-
     # Security
     JWT_SECRET: str = "changeme-generate-with-openssl-rand-hex-32"
     JWT_ALGORITHM: str = "HS256"

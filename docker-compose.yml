@@ -22,9 +22,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "8000:8000"
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - fvpn-net
     logging: *log
@@ -76,29 +73,6 @@ services:
     networks:
       - fvpn-net
     logging: *log
-
-  ##############################################################################
-  # REDIS
-  ##############################################################################
-  redis:
-    image: redis:7-alpine
-    container_name: uniproxy-redis
-    restart: unless-stopped
-    command: >
-      redis-server
-      --save 60 1
-      --loglevel warning
-      --requirepass ${REDIS_PASSWORD:-fvpn_redis}
-    volumes:
-      - redis-data:/data
-    networks:
-      - fvpn-net
-    logging: *log
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-fvpn_redis}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   ##############################################################################
   # XRAY-CORE — VLESS/Trojan/Shadowsocks proxy
@@ -183,7 +157,6 @@ services:
 ################################################################################
 volumes:
   backend-data:
-  redis-data:
   nginx-logs:
 
 networks:

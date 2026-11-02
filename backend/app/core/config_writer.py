@@ -1,64 +1,40 @@
-"""
-Config sync orchestrator — bridges DB `Protocol` rows to the xray/sing-box
-config writers (app/core/xray.py, app/core/singbox.py) and triggers the
-sibling container restarts.
+"""Bridge database protocols to a single local, validated apply transaction."""
 
-Referenced by app/core/bootstrap.py (initial seed) and app/api/protocols.py
-(create/update/delete/force-sync) as:
-
-    from app.core.config_writer import sync_node_config
-    result = await sync_node_config(node_id)   # {"xray": bool, "singbox": bool}
-
-Both write_and_reload() implementations already filter inbounds by their own
-protocol map and silently skip anything they don't own (see the "no builder
-for X — skipped" log lines in xray.py / singbox.py), so the *same* protocol
-list is safely passed to both — each writer only picks up what it recognizes.
-"""
-
-from __future__ import annotations
-
-import asyncio
-import logging
+from pathlib import Path
 
 from sqlalchemy import select
 
 from app.core import xray, singbox
+from app.core.config_apply import APPLY_LOCK, CoreConfig, apply_configs_locked
 
-logger = logging.getLogger("fvpn.config_writer")
+
+def is_local_node(node) -> bool:
+    return isinstance(node.meta, dict) and node.meta.get("local") is True
 
 
-async def sync_node_config(node_id: int) -> dict:
-    """
-    Load all active protocols for `node_id`, write both xray and sing-box
-    server configs, and restart the sibling proxy containers.
-
-    Returns {"xray": bool, "singbox": bool} — True per core if its
-    write_and_reload succeeded (or had nothing to do).
-    """
+async def sync_node_config(node_id: int) -> dict[str, bool | str]:
     from app.database import SessionLocal
-    from app.models import Protocol
+    from app.models import Node, Protocol
 
-    async with SessionLocal() as db:
-        result = await db.execute(
-            select(Protocol).where(
-                Protocol.node_id == node_id,
-                Protocol.is_active == True,  # noqa: E712
-            )
-        )
-        rows = result.scalars().all()
-
-    protocols = [
-        {"name": p.name, "port": p.port, "config": p.config or {}}
-        for p in rows
-    ]
-
-    if not protocols:
-        logger.info(f"Node {node_id}: no active protocols — nothing to sync")
-        return {"xray": True, "singbox": True}
-
-    xray_ok, singbox_ok = await asyncio.gather(
-        xray.write_and_reload(protocols),
-        singbox.write_and_reload(protocols),
-    )
-
-    return {"xray": xray_ok, "singbox": singbox_ok}
+    # Protect the read as well as the write, so queued syncs cannot apply stale snapshots.
+    async with APPLY_LOCK:
+        async with SessionLocal() as db:
+            node = (await db.execute(select(Node).where(Node.id == node_id))).scalar_one_or_none()
+            if node is None:
+                return {"xray": False, "singbox": False, "status": "node_not_found"}
+            if not is_local_node(node):
+                return {"xray": False, "singbox": False, "status": "manual_required"}
+            rows = (await db.execute(select(Protocol).where(
+                Protocol.node_id == node_id, Protocol.is_active.is_(True),
+            ))).scalars().all()
+            protocols = [{"name": p.name, "port": p.port, "config": p.config or {}} for p in rows]
+        supported = set(xray._INBOUND_MAP) | set(singbox._INBOUND_MAP)
+        if any(p["name"].lower().replace("-", "") not in supported for p in protocols):
+            return {"xray": False, "singbox": False, "status": "unsupported_protocol"}
+        # An empty active set removes stale public listeners in both cores.
+        return await apply_configs_locked([
+            CoreConfig("xray", Path(xray.XRAY_CONFIG), xray.XRAY_CONTAINER,
+                       xray.XRAY_CONTAINER_BIN, xray.build_xray_server_config(protocols)),
+            CoreConfig("singbox", Path(singbox.SINGBOX_CONFIG), singbox.SINGBOX_CONTAINER,
+                       singbox.SINGBOX_CONTAINER_BIN, singbox.build_singbox_server_config(protocols)),
+        ])

@@ -1,13 +1,14 @@
 """Nodes management — CRUD + SSH auto-setup"""
 
-import asyncio
+import base64
+import json
 import time
 from datetime import datetime
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, JsonValue, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +16,7 @@ from app.database import get_db
 from app.models import Node, Protocol
 from app.api.auth import require_admin, User
 from app.core.ssh import SSHClient
-from app.config import settings
+from app.api.protocols import Port, ProtocolName, validate_options
 
 router = APIRouter()
 
@@ -49,9 +50,15 @@ class NodeOut(BaseModel):
 
 
 class AutoSetupRequest(BaseModel):
-    protocol: str
-    port: int = 443
-    extra: dict = {}
+    model_config = {"extra": "forbid"}
+    protocol: ProtocolName
+    port: Port = 443
+    extra: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator("extra")
+    @classmethod
+    def validate_extra(cls, value):
+        return validate_options(value)
 
 
 # IMPORTANT: /check-all must be registered BEFORE /{node_id} so it isn't
@@ -121,7 +128,7 @@ async def check_all_nodes(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger async health-check on all active nodes."""
-    result = await db.execute(select(Node).where(Node.is_active == True))
+    result = await db.execute(select(Node).where(Node.is_active.is_(True)))
     nodes = result.scalars().all()
     bg.add_task(_check_nodes_bg, [n.id for n in nodes])
     return {"message": f"Health check started for {len(nodes)} nodes"}
@@ -197,6 +204,11 @@ async def auto_setup(
     node = result.scalar_one_or_none()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+    from app.core.config_writer import is_local_node
+    if is_local_node(node):
+        raise HTTPException(409, {"status": "manual_required", "message": "Use local protocol sync"})
+    if req.protocol != "shadowsocks":
+        raise HTTPException(409, {"status": "manual_required", "message": "Remote automatic setup is supported only for Shadowsocks"})
     if not node.ssh_key:
         raise HTTPException(status_code=400, detail="SSH key required for auto-setup")
 
@@ -233,50 +245,53 @@ async def _auto_setup_bg(node_id: int, protocol: str, port: int, extra: dict):
         node = result.scalar_one_or_none()
         if not node:
             return
+        ssh = None
         try:
+            from app.lib.config_generator import ProtocolConfig
+            # Generate once before connecting, then deliver and persist this
+            # exact configuration. Unsupported setup fails before SSH begins.
+            config = ProtocolConfig.defaults(protocol, port, extra)
+            commands = _setup_script(protocol, port, config, node.host)
             ssh = SSHClient(node.host, node.ssh_port, node.ssh_user, node.ssh_key)
             await ssh.connect()
-            for cmd in _setup_script(protocol, port, extra, node.host):
-                stdout, stderr, code = await ssh.exec(cmd)
+            for cmd in commands:
+                _, _, code = await ssh.exec(cmd)
                 if code != 0:
-                    raise RuntimeError(f"cmd failed [{code}]: {stderr}")
-            await ssh.disconnect()
+                    raise RuntimeError("remote_setup_command_failed")
 
-            from app.lib.config_generator import ProtocolConfig
-            config = ProtocolConfig.defaults(protocol, port, extra)
             proto = Protocol(node_id=node_id, name=protocol, port=port, config=config)
             db.add(proto)
             node.status = "online"
+            node.meta = {**(node.meta or {}), "last_error": None, "setup_status": "applied"}
             await db.commit()
-        except Exception as e:
+        except Exception:
             node.status = "error"
-            node.meta = {**(node.meta or {}), "last_error": str(e)}
+            node.meta = {**(node.meta or {}), "last_error": "Remote setup failed; verify SSH access and install the protocol manually", "setup_status": "failed"}
             await db.commit()
+        finally:
+            if ssh is not None:
+                try:
+                    await ssh.disconnect()
+                except Exception:
+                    pass
 
 
 def _setup_script(protocol: str, port: int, extra: dict, host: str) -> list[str]:
-    pw = extra.get("password", "FVpn2024")
-    scripts = {
-        "hysteria2": [
-            "bash <(curl -fsSL https://get.hy2.sh/)",
-            f"hy2 setup --port {port} --password {pw} --acme {host}",
-            "systemctl enable hysteria-server --now",
-        ],
-        "shadowsocks": [
-            "apt-get install -y -qq shadowsocks-libev",
-            f'cat > /etc/shadowsocks-libev/config.json <<\'EOF\'\n{{"server":"0.0.0.0","server_port":{port},"method":"{extra.get("method","aes-256-gcm")}","password":"{pw}","timeout":300}}\nEOF',
-            "systemctl enable shadowsocks-libev --now",
-        ],
-        "vless": [
-            "bash <(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)",
-            "systemctl enable xray --now",
-        ],
-        "wireguard": [
-            "apt-get install -y -qq wireguard",
-            "wg genkey | tee /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key",
-            "chmod 600 /etc/wireguard/private.key",
-            f"bash -c 'echo -e \"[Interface]\\nAddress=10.0.0.1/24\\nListenPort={port}\\nPrivateKey=$(cat /etc/wireguard/private.key)\" > /etc/wireguard/wg0.conf'",
-            "systemctl enable wg-quick@wg0 --now",
-        ],
-    }
-    return scripts.get(protocol, [f"echo 'Protocol {protocol} not implemented'"])
+    if protocol != "shadowsocks":
+        raise ValueError("Remote protocol setup requires manual configuration")
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("Invalid port")
+    password = extra.get("password")
+    method = extra.get("method", "aes-256-gcm")
+    if not isinstance(password, str) or not password:
+        raise ValueError("A generated password is required")
+    if method not in ("aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305"):
+        raise ValueError("Method is unsupported by shadowsocks-libev")
+    config = {"server": "0.0.0.0", "server_port": port, "method": method,
+              "password": password, "timeout": 300, "mode": "tcp_and_udp"}
+    encoded = base64.b64encode(json.dumps(config).encode()).decode("ascii")
+    return [
+        "apt-get install -y -qq shadowsocks-libev",
+        f"umask 077; printf '%s' '{encoded}' | base64 -d > /etc/shadowsocks-libev/config.json",
+        "systemctl enable shadowsocks-libev && systemctl restart shadowsocks-libev && systemctl is-active --quiet shadowsocks-libev",
+    ]

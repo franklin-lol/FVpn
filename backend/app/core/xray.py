@@ -6,8 +6,6 @@ then restarts the sibling `fvpn-xray` Docker container to apply it.
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import os
 import uuid
@@ -17,6 +15,7 @@ from typing import Any
 logger = logging.getLogger("fvpn.xray")
 
 XRAY_BIN       = os.environ.get("XRAY_BIN",       "/usr/local/bin/xray")
+XRAY_CONTAINER_BIN = os.environ.get("XRAY_CONTAINER_BIN", "/usr/bin/xray")
 XRAY_CONFIG    = os.environ.get("XRAY_CONFIG",    "/etc/xray/config.json")
 XRAY_CONTAINER = os.environ.get("XRAY_CONTAINER", "fvpn-xray")
 
@@ -216,58 +215,16 @@ def build_xray_server_config(protocols: list[dict]) -> dict:
 ###############################################################################
 
 async def write_and_reload(protocols: list[dict], config_path: str = XRAY_CONFIG) -> bool:
-    """
-    Build config, write to disk, restart the sibling fvpn-xray container.
-    Returns True on success.
-    """
-    config = build_xray_server_config(protocols)
-    path   = Path(config_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    from app.core.config_apply import CoreConfig, apply_configs
 
-    tmp = path.with_suffix(".tmp")
-    try:
-        tmp.write_text(json.dumps(config, indent=2, ensure_ascii=False))
-        tmp.replace(path)
-        logger.info(f"Xray config written to {path} ({len(config['inbounds'])-1} protocol inbounds)")
-    except OSError as e:
-        logger.error(f"Failed to write xray config: {e}")
-        return False
-
-    return await _reload_xray()
-
-
-async def _reload_xray() -> bool:
-    """
-    Restart the sibling fvpn-xray Docker container so it picks up the
-    freshly written config.
-
-    Xray runs in its own container with network_mode: host (see
-    docker-compose.yml) — there is no local xray binary or systemd unit
-    inside the backend container to control. The only way to apply a new
-    config is via the Docker socket mounted into the backend container.
-    """
-    proc = await asyncio.create_subprocess_exec(
-        "docker", "restart", XRAY_CONTAINER,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode == 0:
-        logger.info(f"{XRAY_CONTAINER} restarted")
-        return True
-
-    logger.error(f"{XRAY_CONTAINER} restart failed: {stderr.decode().strip()}")
-    return False
+    spec = CoreConfig("xray", Path(config_path), XRAY_CONTAINER,
+                      XRAY_CONTAINER_BIN, build_xray_server_config(protocols))
+    result = await apply_configs([spec])
+    return result["xray"] is True
 
 
 async def validate_config(config_path: str = XRAY_CONFIG) -> tuple[bool, str]:
-    """Run `xray -test -config <path>` inside the sibling container."""
-    proc = await asyncio.create_subprocess_exec(
-        "docker", "exec", XRAY_CONTAINER, "xray", "-test", "-config", config_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    out, err = await proc.communicate()
-    ok = proc.returncode == 0
-    msg = (out + err).decode().strip()
-    return ok, msg
+    from app.core.config_apply import CoreConfig, validate_candidate
+
+    spec = CoreConfig("xray", Path(config_path), XRAY_CONTAINER, XRAY_CONTAINER_BIN, {})
+    return await validate_candidate(spec, Path(config_path))

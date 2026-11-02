@@ -1,43 +1,11 @@
-"""
-Bootstrap — runs once, on the very first backend startup ever.
+"""Seed a fresh installation once; retry failed config apply without changing credentials.
 
-This is the actual answer to "why isn't anything configured by default?":
-nothing was seeding a node or protocols, so xray/sing-box always booted
-with empty configs (inbounds: []) until an admin manually added a node via
-SSH and clicked Auto-Setup. For a single-server self-hosted install, that's
-backwards — the panel and the proxy core are already running on the SAME
-machine, no SSH required.
-
-This module creates one "Local Server" node (this very container host,
-reachable at settings.DOMAIN) and provisions four ready-to-use protocols on
-ports already opened by install.sh's firewall rules:
-
-    VLESS-Reality   tcp/443   — only if Reality keys were generated at install
-    Hysteria2       udp/443   — coexists with VLESS on the same port number;
-                                 TCP and UDP sockets don't collide, and this
-                                 is the same dual-protocol-on-443 trick
-                                 Hiddify/3X-UI use for stealth
-    Shadowsocks2022 tcp+udp/8443
-    Trojan          tcp/8080  — tls_insecure=True by default, since a fresh
-                                 install commonly has a self-signed cert
-
-It then writes real Xray/Sing-box configs and restarts those sibling
-containers, so the proxy stack is actually reachable within seconds of
-`docker compose up` — zero manual setup for the common single-server case.
-Multi-server fleets are still added the normal way via Nodes > Add Node.
-
-Idempotency: guarded by atomically creating /data/.bootstrap_done as the
-FIRST action (os.O_CREAT | os.O_EXCL is an atomic OS-level claim). uvicorn
-runs 4 worker processes, each calling init_db() independently on startup —
-without this atomic claim, all 4 would race past a plain `.exists()` check
-and seed duplicate nodes/protocols. The flag also lives on the persisted
-/data volume, so deliberately deleting the seeded node later does NOT
-trigger re-seeding on the next container restart.
+One backend worker is required. Existing installations with a completion marker
+are left alone, including intentionally deleted nodes.
 """
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 
 from app.config import settings
@@ -45,84 +13,64 @@ from app.config import settings
 logger = logging.getLogger("fvpn.bootstrap")
 
 FLAG_FILE = Path("/data/.bootstrap_done")
+_BOOTSTRAP_LOCK = asyncio.Lock()
 
 
 async def run_once() -> None:
-    # Atomic claim — exactly one of the 4 uvicorn workers wins this race.
-    try:
-        FLAG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(FLAG_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.close(fd)
-    except FileExistsError:
-        return  # another worker claimed it, or this ran on a previous boot
-
-    try:
-        await _seed()
-        logger.info("Bootstrap complete")
-    except Exception as e:
-        # Never let a bootstrap failure block app startup — manual node/
-        # protocol creation via the UI still works regardless.
-        logger.error(f"Bootstrap failed (add nodes/protocols manually via the panel): {e}", exc_info=True)
+    async with _BOOTSTRAP_LOCK:
+        if FLAG_FILE.exists():
+            return
+        try:
+            FLAG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            await _seed()
+            FLAG_FILE.touch(mode=0o600)
+            logger.info("Bootstrap complete")
+        except Exception:
+            logger.error("Bootstrap incomplete; retry on restart or sync the local node manually")
 
 
 async def _seed() -> None:
-    logger.info("First boot — provisioning default local node and protocols")
-
+    from sqlalchemy import select
     from app.database import SessionLocal
     from app.models import Node, Protocol
     from app.lib.config_generator import ProtocolConfig
 
     async with SessionLocal() as db:
-        node = Node(
-            name="Local Server",
-            host=settings.DOMAIN,
-            ssh_port=22,
-            ssh_user="root",
-            ssh_key=None,
-            group="Local",
-            status="online",
-            is_active=True,
-            meta={"local": True, "managed_by": "bootstrap"},
-        )
-        db.add(node)
-        await db.commit()
-        await db.refresh(node)
-        node_id = node.id
+        nodes = (await db.execute(select(Node))).scalars().all()
+        seeded = next((n for n in nodes if (n.meta or {}).get("local") is True
+                       and (n.meta or {}).get("managed_by") == "bootstrap"), None)
+        if seeded is not None:
+            node_id = seeded.id
+        elif nodes:
+            # An existing installation must never gain a new seed node or keys.
+            return
+        else:
+            node = Node(name="Local Server", host=settings.DOMAIN, ssh_port=22,
+                        ssh_user="root", ssh_key=None, group="Local", status="online",
+                        is_active=True, meta={"local": True, "managed_by": "bootstrap"})
+            db.add(node)
+            await db.flush()
+            node_id = node.id
+            # These protocols do not depend on a trusted local TLS certificate.
+            # Operators can add certificate-based protocols after configuring TLS.
+            defaults: list[tuple[str, int, dict]] = [
+                ("shadowsocks", 8443, {"method": "aes-256-gcm"}),
+                # Reality's SNI should be a real third-party TLS host whose
+                # certificate gets "borrowed" for camouflage — NOT this
+                # server's own domain, that would defeat the point. Keypair is
+                # generated fresh by ProtocolConfig.defaults() below (real
+                # X25519, same as `xray x25519`) — no .env setup required.
+                ("vless",       443,  {"sni": getattr(settings, "REALITY_SNI", None) or "ya.ru"}),
+            ]
 
-        # (protocol name, port, config overrides) — see module docstring for port reasoning
-        defaults: list[tuple[str, int, dict]] = [
-            ("hysteria2",   443,  {"sni": settings.DOMAIN}),
-            ("shadowsocks", 8443, {"method": "aes-256-gcm"}),
-            ("trojan",      8080, {"sni": settings.DOMAIN, "tls_insecure": True}),
-            # Reality's SNI should be a real third-party TLS host whose
-            # certificate gets "borrowed" for camouflage — NOT this
-            # server's own domain, that would defeat the point. Keypair is
-            # generated fresh by ProtocolConfig.defaults() below (real
-            # X25519, same as `xray x25519`) — no .env setup required.
-            ("vless",       443,  {"sni": getattr(settings, "REALITY_SNI", None) or "ya.ru"}),
-        ]
+            for name, port, extra in defaults:
+                cfg = ProtocolConfig.defaults(name, port, extra)
+                db.add(Protocol(node_id=node_id, name=name, port=port, config=cfg, is_active=True))
 
-        for name, port, extra in defaults:
-            cfg = ProtocolConfig.defaults(name, port, extra)
-            db.add(Protocol(node_id=node_id, name=name, port=port, config=cfg, is_active=True))
+            await db.commit()
+            logger.info(f"Seeded {len(defaults)} default protocols on local node #{node_id}")
 
-        await db.commit()
-        logger.info(f"Seeded {len(defaults)} default protocols on local node #{node_id}")
-
-    # Give the sibling fvpn-xray / fvpn-singbox containers a moment to finish
-    # their own cold start before we try to `docker restart` them — they're
-    # tiny Go binaries and start in parallel with this Python backend, which
-    # is almost always slower to reach this point, but a small buffer here
-    # costs nothing and avoids a needless first-run warning in the logs.
-    await asyncio.sleep(3)
-
-    try:
-        from app.core.config_writer import sync_node_config
-        result = await sync_node_config(node_id)
-        logger.info(f"Initial config sync — xray={result['xray']} singbox={result['singbox']}")
-    except Exception as e:
-        logger.error(
-            f"Initial config sync failed: {e} — the node/protocols were still "
-            f"created; trigger a manual sync via Protocols page or "
-            f"POST /api/protocols/sync/{node_id}"
-        )
+    from app.core.config_writer import sync_node_config
+    result = await sync_node_config(node_id)
+    if result.get("status") != "applied":
+        raise RuntimeError("initial_config_apply_failed")

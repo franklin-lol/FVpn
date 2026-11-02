@@ -1,45 +1,56 @@
 #!/usr/bin/env bash
-# UniProxy Backup Script — runs every 6h via cron
+# Run the same verified SQLite backup used by the admin API inside the backend.
 set -euo pipefail
+umask 077
 
-LOG="/var/log/uniproxy.log"
-BACKUP_DIR="${BACKUP_DIR:-/data/backups}"
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-ARCHIVE="$BACKUP_DIR/uniproxy_$TIMESTAMP.tar.gz"
-KEEP_DAYS=7
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd -- "$PROJECT_DIR"
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [BACKUP] $*" | tee -a "$LOG"; }
-
-mkdir -p "$BACKUP_DIR"
-
-log "Starting backup → $ARCHIVE"
-
-# Collect items
-ITEMS=()
-[[ -f /data/uniproxy.db    ]] && ITEMS+=(/data/uniproxy.db)
-[[ -d /etc/uniproxy        ]] && ITEMS+=(/etc/uniproxy)
-[[ -d /etc/xray            ]] && ITEMS+=(/etc/xray)
-[[ -d /etc/sing-box        ]] && ITEMS+=(/etc/sing-box)
-[[ -d /etc/letsencrypt     ]] && ITEMS+=(/etc/letsencrypt)
-
-if [[ ${#ITEMS[@]} -eq 0 ]]; then
-    log "Nothing to back up"
-    exit 0
+# BACKUP_DIR is a path inside the backend container's persistent /data volume.
+# Without an override, the helper reads the backend's configured BACKUP_DIR.
+BACKUP_ARGS=()
+if [[ -n "${BACKUP_DIR:-}" ]]; then
+    BACKUP_ARGS+=(--backup-dir "$BACKUP_DIR")
 fi
+RESULT=$(docker compose exec -T backend python -m app.core.backup "${BACKUP_ARGS[@]}")
+printf '[BACKUP] %s\n' "$RESULT"
 
-tar -czf "$ARCHIVE" "${ITEMS[@]}" 2>>"$LOG"
-SIZE=$(du -sh "$ARCHIVE" | cut -f1)
-log "Archive: $ARCHIVE ($SIZE)"
-
-# S3 upload (optional)
-if [[ -n "${BACKUP_S3_BUCKET:-}" ]] && command -v aws &>/dev/null; then
-    log "Uploading to s3://$BACKUP_S3_BUCKET/uniproxy/"
-    aws s3 cp "$ARCHIVE" "s3://$BACKUP_S3_BUCKET/uniproxy/$(basename "$ARCHIVE")" >>"$LOG" 2>&1 \
-        && log "S3 upload OK" \
-        || log "S3 upload failed (continuing)"
+# Optional host AWS CLI upload: stream the private archive from the container.
+# No host bind mount, secret contents, or AWS output is written to logs.
+UPLOAD_BUCKET="${BACKUP_S3_BUCKET:-}"
+if [[ -z "${BACKUP_S3_BUCKET+x}" ]]; then
+    if ! UPLOAD_BUCKET=$(docker compose exec -T backend python -c \
+        'from app.config import settings; print(settings.BACKUP_S3_BUCKET)' 2>/dev/null); then
+        printf '[BACKUP] S3 settings unavailable; verified local archive retained\n' >&2
+        UPLOAD_BUCKET=""
+    fi
 fi
+if [[ -n "$UPLOAD_BUCKET" ]]; then
+    if command -v aws >/dev/null 2>&1; then
+        ARCHIVE=$(printf '%s' "$RESULT" | docker compose exec -T backend python -c \
+            'import json,sys; print(json.load(sys.stdin)["archive"])')
+        READ_ARCHIVE='
+import os
+import shutil
+import sys
+from pathlib import Path
+from app.config import settings
 
-# Prune old local backups
-find "$BACKUP_DIR" -name "uniproxy_*.tar.gz" -mtime +$KEEP_DAYS -delete
-COUNT=$(find "$BACKUP_DIR" -name "uniproxy_*.tar.gz" | wc -l)
-log "Backup complete. $COUNT archive(s) retained (>${KEEP_DAYS}d pruned)"
+root = Path(sys.argv[1] or settings.BACKUP_DIR)
+name = sys.argv[2]
+if Path(name).name != name or not name.startswith("uniproxy_") or not name.endswith(".tar.gz"):
+    raise SystemExit("Invalid archive name")
+fd = os.open(root / name, os.O_RDONLY | os.O_NOFOLLOW)
+with os.fdopen(fd, "rb") as source:
+    shutil.copyfileobj(source, sys.stdout.buffer)
+'
+        if docker compose exec -T backend python -c "$READ_ARCHIVE" "${BACKUP_DIR:-}" "$ARCHIVE" \
+            | aws s3 cp - "s3://$UPLOAD_BUCKET/uniproxy/$ARCHIVE" --only-show-errors >/dev/null 2>&1; then
+            printf '[BACKUP] S3 upload complete\n'
+        else
+            printf '[BACKUP] S3 upload failed; verified local archive retained\n' >&2
+        fi
+    else
+        printf '[BACKUP] S3 upload skipped: host AWS CLI unavailable\n' >&2
+    fi
+fi

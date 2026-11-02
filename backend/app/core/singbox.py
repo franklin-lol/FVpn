@@ -6,8 +6,6 @@ Handles protocols NOT covered by Xray:
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import os
 import uuid
@@ -17,6 +15,7 @@ from typing import Any
 logger = logging.getLogger("fvpn.singbox")
 
 SINGBOX_BIN       = os.environ.get("SINGBOX_BIN",       "/usr/local/bin/sing-box")
+SINGBOX_CONTAINER_BIN = os.environ.get("SINGBOX_CONTAINER_BIN", "/usr/local/bin/sing-box")
 SINGBOX_CONFIG    = os.environ.get("SINGBOX_CONFIG",    "/etc/sing-box/config.json")
 SINGBOX_CONTAINER = os.environ.get("SINGBOX_CONTAINER", "fvpn-singbox")
 
@@ -161,7 +160,8 @@ def build_singbox_server_config(protocols: list[dict]) -> dict:
         base_tag = inbound["tag"]
         tag, i = base_tag, 2
         while tag in seen_tags:
-            tag = f"{base_tag}-{i}"; i += 1
+            tag = f"{base_tag}-{i}"
+            i += 1
         inbound["tag"] = tag
         seen_tags.add(tag)
 
@@ -212,56 +212,16 @@ def build_singbox_server_config(protocols: list[dict]) -> dict:
 ###############################################################################
 
 async def write_and_reload(protocols: list[dict], config_path: str = SINGBOX_CONFIG) -> bool:
-    config = build_singbox_server_config(protocols)
+    from app.core.config_apply import CoreConfig, apply_configs
 
-    if not config["inbounds"]:
-        logger.info("sing-box: no applicable protocols — skipping config write")
-        return True
-
-    path = Path(config_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    tmp = path.with_suffix(".tmp")
-    try:
-        tmp.write_text(json.dumps(config, indent=2, ensure_ascii=False))
-        tmp.replace(path)
-        logger.info(f"sing-box config written to {path} ({len(config['inbounds'])} inbounds)")
-    except OSError as e:
-        logger.error(f"Failed to write sing-box config: {e}")
-        return False
-
-    return await _reload_singbox()
-
-
-async def _reload_singbox() -> bool:
-    """
-    Restart the sibling fvpn-singbox Docker container so it picks up the
-    freshly written config. Same reasoning as xray.py's _reload_xray —
-    sing-box runs in its own container, not as a local process this backend
-    container could SIGHUP or systemctl-restart directly.
-    """
-    proc = await asyncio.create_subprocess_exec(
-        "docker", "restart", SINGBOX_CONTAINER,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode == 0:
-        logger.info(f"{SINGBOX_CONTAINER} restarted")
-        return True
-
-    logger.error(f"{SINGBOX_CONTAINER} restart failed: {stderr.decode().strip()}")
-    return False
+    spec = CoreConfig("singbox", Path(config_path), SINGBOX_CONTAINER,
+                      SINGBOX_CONTAINER_BIN, build_singbox_server_config(protocols))
+    result = await apply_configs([spec])
+    return result["singbox"] is True
 
 
 async def validate_config(config_path: str = SINGBOX_CONFIG) -> tuple[bool, str]:
-    """Run `sing-box check -c <path>` inside the sibling container."""
-    proc = await asyncio.create_subprocess_exec(
-        "docker", "exec", SINGBOX_CONTAINER, "sing-box", "check", "-c", config_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    out, err = await proc.communicate()
-    ok  = proc.returncode == 0
-    msg = (out + err).decode().strip()
-    return ok, msg
+    from app.core.config_apply import CoreConfig, validate_candidate
+
+    spec = CoreConfig("singbox", Path(config_path), SINGBOX_CONTAINER, SINGBOX_CONTAINER_BIN, {})
+    return await validate_candidate(spec, Path(config_path))

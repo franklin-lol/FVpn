@@ -1,210 +1,87 @@
-<div align="center">
+# FVpn
 
-```
+Self-hosted management panel for Xray and sing-box. FastAPI, React and Docker Compose; one backend worker and a persistent SQLite database. Designed for a small personal deployment.
 
-    ███████╗██╗   ██╗██████╗ ███╗   ██╗
-    ██╔════╝██║   ██║██╔══██╗████╗  ██║
-    █████╗  ██║   ██║██████╔╝██╔██╗ ██║
-    ██╔══╝  ╚██╗ ██╔╝██╔═══╝ ██║╚██╗██║
-    ██║      ╚████╔╝ ██║     ██║ ╚████║
-    ╚═╝       ╚═══╝  ╚═╝     ╚═╝  ╚═══╝
+## Installation
 
-
-```
-
-**Unified Proxy Management Panel**
-
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.12-3776ab?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react&logoColor=white)](https://react.dev)
-[![Docker](https://img.shields.io/badge/Docker-compose-2496ed?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
-[![Protocols](https://img.shields.io/badge/protocols-8-7c3aed?style=flat-square)](#protocols)
-
-[github.com/franklin-lol/FVpn](https://github.com/franklin-lol/FVpn) &nbsp;·&nbsp; [franklin-sys.vercel.app](https://franklin-sys.vercel.app/)
-
-</div>
-
----
-
-<div align="center">
-  <img src="docs/demo.svg" width="740" alt="FVpn install demo"/>
-</div>
-
----
-
-## Overview
-
-FVpn is a self-hosted proxy management panel. One command deploys a production-grade server supporting 8 protocols. A Python library generates client configs for all major proxy clients from a single unified API.
-
-The panel manages users, nodes, subscriptions and traffic from a single web interface. A Telegram bot provides full remote control. A self-healing daemon monitors and recovers from failures automatically.
-
----
-
-## Protocols
-
-| Protocol | Transport | Notes |
-|----------|-----------|-------|
-| Hysteria2 | QUIC | Port-hopping, high-throughput |
-| VLESS Reality | TCP | XTLS-Vision, zero TLS fingerprint |
-| ShadowTLS v3 | TCP | SNI camouflage via real TLS handshake |
-| Shadowsocks 2022 | TCP/UDP | aes-256-gcm, chacha20 |
-| Trojan | TCP | HTTPS traffic mimicry |
-| TUIC v5 | QUIC | BBR congestion, 0-RTT |
-| WireGuard | UDP | ChaCha20-Poly1305, kernel-level |
-| SSH | TCP | Legacy tunnel fallback |
-
----
-
-## Install
+Ubuntu 20.04+ or Debian 11+, root access, and a public hostname or IP address are required. Review the installer before running it on your server:
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/franklin-lol/FVpn/main/install.sh)
+git clone https://github.com/franklin-lol/FVpn
+cd FVpn
+sudo bash install.sh
 ```
 
-Ubuntu 20.04+ or Debian 11+. Root required. Domain optional (self-signed fallback).
+The installer prepares the checkout, fills missing or empty required environment values, publishes TLS files, adds firewall rules without resetting existing rules, and starts Compose. It preserves nonempty existing configuration. It never stops an unrelated web server to obtain a certificate.
 
-Installs Xray-core, Sing-box, obtains TLS certificate, configures firewall, deploys panel via Docker Compose. Panel is available within 5 minutes.
+The panel uses **HTTPS on port 2095**. A public IP uses a self-signed certificate, which requires a browser exception. A domain can use Let's Encrypt when DNS and inbound port 80 are available. TCP port 443 belongs to the proxy core, not the panel.
 
----
+Keep `.env`, `/etc/fvpn/env`, private keys and backups private. Environment files use mode 600. Do not commit them. Changing `MASTER_PASSWORD` does not reset an existing database user's password. Changing `JWT_SECRET` signs out existing sessions.
 
-## Manual deploy
+## Manual configuration
+
+The example is named [`env.example`](env.example), without a leading dot. Copy it to `.env`, fill `DOMAIN`, `MASTER_PASSWORD` and a cryptographically random `JWT_SECRET`, and prepare ordinary PEM files at `/etc/fvpn/ssl/cert.pem` and `/etc/fvpn/ssl/key.pem` before starting:
 
 ```bash
-git clone https://github.com/franklin-lol/FVpn && cd FVpn
-cp .env.example .env        # edit: DOMAIN, MASTER_PASSWORD, JWT_SECRET
+cp env.example .env
+chmod 600 .env
+openssl rand -hex 32
+# Edit .env with your own values; never paste secrets into an issue.
 docker compose up -d --build
 ```
 
----
+Existing installations retain their SQLite data in the `backend-data` volume. Never use `docker compose down -v` when updating. Redis is not used; new deployments do not start it. Existing `REDIS_*` environment entries can remain and existing Redis volumes are not automatically removed.
 
-## Config generation library
+## Protocol support
 
-```python
-from app.lib.config_generator import ConfigGenerator, Balancer
+| Protocol | Local server configuration | Notes |
+| --- | --- | --- |
+| VLESS Reality | Xray | Recommended TCP preset; does not require a publicly trusted server certificate. |
+| Shadowsocks | sing-box | Authenticated encryption; default `aes-256-gcm` is classic Shadowsocks, not Shadowsocks 2022. |
+| Trojan / VMess | Xray | Require a certificate trusted by the selected client. |
+| Hysteria2 / TUIC | sing-box | Require UDP access and suitable client certificate trust. |
+| ShadowTLS | sing-box | Advanced configuration; client format support must be checked. |
+| WireGuard / SSH | Not supported as managed local presets | Existing records are retained; incomplete operations are not reported as successful. |
 
-gen = ConfigGenerator(domain="your-domain.com")
+The server builders cover seven protocol families; client formats support different subsets. Do not infer device compatibility from the number of names in the interface. Core configuration is checked against the installed image before replacement. Failed application restores the previous files and attempts to recover the affected cores.
 
-gen.add_protocol("hysteria2",   host="1.2.3.4", port=443,  password="xxx")
-gen.add_protocol("vless",       host="1.2.3.4", port=443,  uuid="...", public_key="...")
-gen.add_protocol("shadowsocks", host="1.2.3.4", port=8443, method="aes-256-gcm", password="yyy")
-gen.add_protocol("trojan",      host="1.2.3.4", port=443,  password="zzz", sni="domain.com")
+## Nodes and subscriptions
 
-balancer = Balancer(
-    strategy="latency",
-    url="http://www.gstatic.com/generate_204",
-    interval="1m",
-    tolerance=50,
-)
+Local configuration is applied only to a node explicitly marked local. Editing a remote node never restarts the local proxy containers. Remote configuration delivery is manual; SSH auto-setup is limited to the implemented Shadowsocks flow. Other setup requests return an actionable unsupported/manual result.
 
-gen.generate("singbox",      balancer=balancer)   # → JSON
-gen.generate("clash",        balancer=balancer)   # → YAML
-gen.generate("hiddify",      balancer=balancer)   # → JSON
-gen.generate("shadowrocket", balancer=balancer)   # → URI list
-gen.generate("v2rayng",      balancer=balancer)   # → base64
+Subscriptions export client configuration in sing-box, Clash, Hiddify, Shadowrocket, v2rayNG and base64 formats, subject to each format's protocol support. Credentials are shared per protocol. Disabling a user or subscription prevents future downloads but does **not** revoke credentials already imported into a client. Rotate the affected protocol credentials to revoke them; that affects everyone sharing that protocol.
 
-gen.validate()                                     # → list of errors
-gen.export("singbox", "/etc/fvpn/client.json")    # → write file
-gen.to_base64(gen.generate("v2rayng"))             # → base64 string
+Traffic limits are stored metadata. Quotas, per-user traffic accounting and connection limits are **not enforced**. Dashboard traffic history is not real telemetry. Node health checks are reachability indicators, not end-to-end VPN verification.
+
+## Backups
+
+The panel's Backup action and scheduled wrapper use the same Python helper inside the backend. It takes a consistent SQLite snapshot through the SQLite backup API, includes configured proxy/TLS directories, then verifies restoration into a temporary database before publishing a private archive. Default retention is seven days under `/data/backups` in the persistent backend volume.
+
+```bash
+docker compose exec -T backend python -m app.core.backup
+docker compose exec -T backend python -m app.core.backup --verify /data/backups/ARCHIVE.tar.gz
+docker compose cp backend:/data/backups/ARCHIVE.tar.gz ./ARCHIVE.tar.gz
 ```
 
----
+Backups contain unencrypted credentials. Keep `.env` and ACME account/renewal state separately in trusted storage: they are not included. Configuration symlinks are rejected; the installer publishes ordinary TLS files. Optional S3 upload is performed by the host wrapper and requires the host AWS CLI and its separately configured credentials. The API creates a local archive only.
 
-## Telegram bot
+For recovery, stop application writers, verify the archive, restore its `database/fvpn.db` and required configuration into a separate location first, and keep the old volume intact until recovery has been tested. Never overwrite a running SQLite file or leave unrelated old WAL/SHM files beside a restored database.
 
-Set `TELEGRAM_TOKEN` and `TELEGRAM_ADMIN_IDS` in `.env`, then `docker compose restart bot`.
+## Monitoring and renewal
 
-```
-/start         Main menu
-/status        Dashboard: users, nodes, traffic, CPU/RAM
-/nodes         List nodes with latency
-/checknodes    Trigger health check on all nodes
-/users         List users and traffic usage
-/adduser       Create user (guided wizard)
-/deluser <id>  Delete user by ID
-/sub <uid>     Get subscription links for user
-/logs          Last 30 log lines
-/restart xray  Restart proxy service
-```
+The host systemd timer checks this checkout's containers and reports disk/certificate warnings. It does not prune unrelated Docker resources or truncate host logs. Certificate renewal runs on the host and temporarily stops only this project's Nginx when standalone validation requires port 80. Existing settings with custom certificate paths outside the shared TLS mount require explicit operator adjustment.
 
----
+## Development checks
 
-## Self-healing
+Target Python 3.12 and Node 20. Development-only tools are pinned in `requirements-dev.txt`.
 
-Systemd timer runs every 5 minutes:
-
-- Restarts crashed Docker containers
-- SSH-restarts proxy services on remote nodes when they go offline
-- Renews TLS certificate when expiry is within 30 days
-- Cleans disk and prunes Docker when usage exceeds 85%
-- Logs all events to `/var/log/fvpn.log`
-
-Auto-backup every 6 hours. Local retention: 7 days. Optional S3 upload via `BACKUP_S3_BUCKET`.
-
----
-
-## Architecture
-
-```
-                    Nginx :2095 (SSL)
-                         │
-          ┌──────────────┼──────────────┐
-          │              │              │
-    React Frontend   FastAPI Backend   Telegram Bot
-    Vite + Zustand   SQLite + Redis    aiogram 3
-          │              │
-          └──────────────┤
-                         │
-              ┌──────────┴──────────┐
-          Xray-core           Sing-box
-       VLESS · Trojan     Hysteria2 · TUIC
-       Shadowsocks            ShadowTLS
-                              WireGuard
+```bash
+pip install -r backend/requirements.txt -r bot/requirements.txt -r requirements-dev.txt
+pytest -q tests
+ruff check backend bot tests
+cd frontend
+npm ci
+npm run build
 ```
 
----
-
-## Environment
-
-`.env` is generated by `install.sh`. Fields marked `[auto]` are set automatically — do not edit unless migrating.
-
-| Variable | [auto] | Description |
-|----------|--------|-------------|
-| `DOMAIN` | | Server domain or IP |
-| `MASTER_PASSWORD` | auto | Initial admin password |
-| `JWT_SECRET` | auto | 32-byte hex signing secret |
-| `REDIS_PASSWORD` | auto | Redis auth password |
-| `CORS_ORIGINS` | | `*` or `https://a.com,https://b.com` |
-| `TELEGRAM_TOKEN` | | From @BotFather |
-| `TELEGRAM_ADMIN_IDS` | | Comma-separated Telegram user IDs |
-| `BACKUP_S3_BUCKET` | | S3 bucket name (optional) |
-
-VLESS-Reality no longer needs `REALITY_PRIVATE_KEY`/`REALITY_PUBLIC_KEY` in `.env` — each Reality protocol generates its own X25519 keypair on creation (same algorithm as `xray x25519`), stored in that protocol's row.
-
-Full reference: [`.env.example`](.env.example)
-
----
-
-## Current limitations
-
-Honest state, not marketing:
-
-- **Credentials are per-protocol, not per-user.** Every user who fetches a subscription gets the *same* Hysteria2/Shadowsocks/Trojan/Reality password for a given node — there's no per-device account isolation or concurrent-connection limit yet. `traffic_limit_gb` enforces a monthly quota, not single-session usage. Sharing a subscription link currently means sharing that node's credentials.
-- **Backend runs a single uvicorn worker** by design — tuned for 1 vCPU / 1 GB RAM targets, not for high concurrency. Scale the box before scaling workers.
-- **Sing-box's server-side `direct` outbound is IPv4-only** (`domain_strategy: ipv4_only`). Correct for VPS without an IPv6 uplink; if your box actually has working IPv6 egress, drop that field in `app/core/singbox.py` to allow it.
-- **Dashboard traffic chart is illustrative, not live telemetry** — there's no time-series traffic pipeline yet (`GET /api/stats/nodes/{id}/history` is a placeholder). CPU/active-users/online-nodes update live over WebSocket; RAM/disk/node-list/events poll every 20s; the 24h traffic graph does not reflect real bytes.
-- **Multi-node balancing works** — every active protocol on every active node is pooled into one `urltest` selector per subscription, client benchmarks and switches automatically. Add nodes via SSH auto-setup or manual protocol entry.
-
----
-
-## License
-
-MIT
-
----
-
-<div align="center">
-
-Built by [franklin](https://franklin-sys.vercel.app/)
-
-</div>
+Validate shell files with `bash -n` and ShellCheck. Do not run the installer or host-management scripts as tests. Core checks must use disposable configuration and test certificates, without host networking or real installation data.

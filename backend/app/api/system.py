@@ -9,6 +9,7 @@ from fastapi.responses import PlainTextResponse
 
 from app.api.auth import require_admin
 from app.config import settings
+from app.core.backup import BackupError, create_configured_backup
 
 router = APIRouter()
 
@@ -135,13 +136,11 @@ async def get_service_logs(service: str, lines: int = 100, _=Depends(require_adm
 ###############################################################################
 @router.post("/backup")
 async def trigger_backup(_=Depends(require_admin)):
-    script = "/opt/fvpn/scripts/backup.sh"
-    if not os.path.exists(script):
-        raise HTTPException(404, "Backup script not found at /opt/fvpn/scripts/backup.sh")
-    out, err, code = await _run(script)
-    if code != 0:
-        raise HTTPException(500, detail=err or "Backup failed")
-    return {"status": "backup_complete", "output": out.strip()}
+    try:
+        result = await asyncio.to_thread(create_configured_backup, settings)
+    except BackupError:
+        raise HTTPException(500, detail="Backup failed; check database availability and backup permissions.") from None
+    return {"status": "backup_complete", **result.metadata()}
 
 
 ###############################################################################
