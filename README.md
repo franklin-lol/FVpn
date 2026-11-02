@@ -30,6 +30,8 @@ Self-hosted management panel for Xray and sing-box. FastAPI, React and Docker Co
 
 Current version: **1.0.2**. See [CHANGELOG.md](CHANGELOG.md) for release notes covering installation and backup fixes, security defaults, and the refreshed setup and connection interface.
 
+Planned work and acceptance criteria: [ROADMAP.md](ROADMAP.md).
+
 ## Installation
 
 Ubuntu 20.04+ or Debian 11+, root access, and a public hostname or IP address are required. Review the installer before running it on your server:
@@ -49,6 +51,10 @@ On a new database, sign in as `admin` with the installer password. The first-run
 Fresh installations create two active connections: VLESS Reality on TCP 443 and Shadowsocks on TCP 8443. The guide selects VLESS as the recommended option and preserves Shadowsocks. Add other protocols deliberately under Connections.
 
 Open Users, choose a person and create a connection link. Share its `/s/…` guide page: it offers a QR, device/app selection, an import button and three setup steps. The interface supports Russian/English, light/dark/system themes and phone layouts. Subscription links are bearer secrets; anyone with one can download its configuration.
+
+App QR codes and the primary copy action contain the direct subscription URL, not the HTML guide. Hiddify uses its `install-config?url=` import link and selects Base64 URIs when available, retaining JSON for configurations that require it. Streisand on iOS offers manual URL/QR import when URI export is available. Share the guide separately when the recipient needs instructions. Existing subscriptions retain their stored format; alternative formats remain available under advanced import options. Native app support varies by version and protocol; test the chosen app before sharing access broadly.
+
+For a direct Streisand subscription or QR from Users, select the **Hiddify / Streisand** format. Existing Hiddify JSON subscriptions can also use the guide's Streisand choice when their protocols support URI export.
 
 Keep `.env`, `/etc/fvpn/env`, private keys and backups private. Environment files use mode 600. Do not commit them. Changing `MASTER_PASSWORD` does not reset an existing database user's password. Changing `JWT_SECRET` signs out existing sessions. Empty, short (under 32 bytes) and known example JWT secrets are rejected at startup; generate your own value.
 
@@ -139,6 +145,7 @@ ruff check backend bot tests
 cd frontend
 npm ci
 npm run build
+node --test tests/subscriptionImport.test.js
 ```
 
 Validate shell files with `bash -n` and ShellCheck. Do not run the installer or host-management scripts as tests. Core checks must use disposable configuration and test certificates, without host networking or real installation data.

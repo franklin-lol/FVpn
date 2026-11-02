@@ -3,11 +3,12 @@ import { ArrowLeft, ArrowRight, Ban, Check, ExternalLink, Link2, Plus, QrCode, R
 import QRCode from "react-qr-code";
 import toast from "react-hot-toast";
 import { apiError, subsApi, usersApi } from "../utils/api";
+import { getSubscriptionImportUrl } from "../utils/subscriptionImport";
 import { useAuthStore, useI18n } from "../store";
 import { Badge, Button, Card, CopyButton, EmptyState, ErrorState, Field, Loading, Modal, PageHeader } from "../components/ui";
 
 const PAGE_SIZE = 20;
-const FORMATS = [{ value: "hiddify", label: "Hiddify" }, { value: "v2rayng", label: "v2rayNG" }, { value: "singbox", label: "sing-box" }, { value: "clash", label: "Clash / Mihomo" }, { value: "shadowrocket", label: "Shadowrocket" }, { value: "base64", label: "Base64" }];
+const FORMATS = [{ value: "base64", label: "Hiddify / Streisand" }, { value: "v2rayng", label: "v2rayNG" }, { value: "shadowrocket", label: "Shadowrocket" }, { value: "clash", label: "Clash / Mihomo" }, { value: "singbox", label: "sing-box (JSON)" }, { value: "hiddify", label: "Hiddify (JSON)" }];
 
 function AddUser({ onClose, onCreated }) {
   const { t } = useI18n();
@@ -80,11 +81,13 @@ function Subscriptions({ user, onClose }) {
       {mutationError && <ErrorState message={mutationError} />}
       {loading ? <Loading label={t("Загружаем ссылки", "Loading links")} /> : error ? <ErrorState message={error} onRetry={load} /> : subscriptions.length === 0 ? <EmptyState icon={Link2} title={t("Пока нет ссылок", "No links yet")} description={t("Выберите приложение выше и создайте первую ссылку.", "Choose an app above and create the first link.")} /> : <div className="space-y-4">{subscriptions.map((subscription) => {
         const connectionLink = subscription.connect_url || new URL(`/s/${encodeURIComponent(subscription.token)}`, subscription.url).toString();
+        const importUrl = getSubscriptionImportUrl(subscription);
         return <Card key={subscription.id} className="space-y-4 !bg-[var(--surface-soft)]"><div className="flex flex-wrap items-center justify-between gap-3"><Badge>{FORMATS.find((item) => item.value === subscription.format)?.label || subscription.format}</Badge><Button variant="ghost" icon={Trash2} aria-label={t("Удалить ссылку", "Delete link")} disabled={!!busy} loading={busy === `delete-${subscription.id}`} onClick={() => remove(subscription)} /></div>
-          <Field label={t("Страница подключения для пользователя", "User connection page")}><input className="input font-mono text-xs" readOnly value={connectionLink} onFocus={(event) => event.target.select()} /></Field>
-          <div className="flex flex-wrap gap-2"><CopyButton text={connectionLink}>{t("Копировать страницу", "Copy page link")}</CopyButton><a className="btn btn-secondary" href={connectionLink} target="_blank" rel="noopener noreferrer">{t("Открыть", "Open")}<ExternalLink size={16} /></a><Button variant="secondary" icon={QrCode} aria-expanded={qrId === subscription.id} onClick={() => setQrId(qrId === subscription.id ? null : subscription.id)}>{t("QR-код", "QR code")}</Button></div>
-          {qrId === subscription.id && <figure className="space-y-3 text-center"><div className="mx-auto w-fit max-w-full rounded-xl bg-white p-4"><QRCode value={connectionLink} size={176} style={{ maxWidth: "100%", height: "auto" }} /></div><figcaption className="text-xs text-[var(--muted)]">{t("Откроет страницу с инструкцией на другом устройстве", "Opens the connection guide on another device")}</figcaption></figure>}
-          <details><summary className="cursor-pointer text-sm">{t("Для опытных пользователей: прямая подписка", "Advanced: direct subscription URL")}</summary><div className="mt-3 space-y-3"><p className="break-all font-mono text-xs text-[var(--muted)]">{subscription.url}</p><CopyButton text={subscription.url}>{t("Копировать подписку", "Copy subscription URL")}</CopyButton></div></details>
+          <Field label={t("Подписка для приложения", "App subscription URL")}><input className="input font-mono text-xs" readOnly value={importUrl} onFocus={(event) => event.target.select()} /></Field>
+          <div className="flex flex-wrap gap-2"><CopyButton text={importUrl}>{t("Копировать для приложения", "Copy for app")}</CopyButton><Button variant="secondary" icon={QrCode} aria-expanded={qrId === subscription.id} onClick={() => setQrId(qrId === subscription.id ? null : subscription.id)}>{t("QR для приложения", "App QR code")}</Button></div>
+          {qrId === subscription.id && <figure className="space-y-3 text-center"><div className="mx-auto w-fit max-w-full rounded-xl bg-white p-4"><QRCode value={importUrl} size={176} style={{ maxWidth: "100%", height: "auto" }} /></div><figcaption className="text-xs text-[var(--muted)]">{t("Сканируйте в VPN-приложении, чтобы добавить подписку", "Scan inside your VPN app to add the subscription")}</figcaption></figure>}
+          <div className="space-y-3 border-t border-[var(--border)] pt-4"><p className="text-sm text-[var(--muted)]">{t("Нужна инструкция? Отправьте пользователю страницу подключения.", "Need instructions? Share the connection guide with the user.")}</p><div className="flex flex-wrap gap-2"><CopyButton text={connectionLink}>{t("Копировать инструкцию", "Copy guide link")}</CopyButton><a className="btn btn-secondary" href={connectionLink} target="_blank" rel="noopener noreferrer">{t("Открыть инструкцию", "Open guide")}<ExternalLink size={16} /></a></div></div>
+          <details><summary className="cursor-pointer text-sm">{t("Для опытных пользователей: исходный формат", "Advanced: original format")}</summary><div className="mt-3 space-y-3"><p className="break-all font-mono text-xs text-[var(--muted)]">{subscription.url}</p><CopyButton text={subscription.url}>{t("Копировать исходную подписку", "Copy original subscription")}</CopyButton></div></details>
         </Card>;
       })}</div>}
       <p className="text-xs text-[var(--muted)]">{t("Ссылка даёт доступ к настройкам и содержит секретный токен. Делитесь только с получателем. Ключи протоколов общие, поэтому удаление ссылки не отключает ранее настроенный VPN.", "A link grants configuration access and contains a secret token. Share it only with the recipient. Protocol credentials are shared, so deleting a link does not disable an already configured VPN.")}</p>

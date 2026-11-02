@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- App import QR codes and copied links use machine-readable subscriptions; Hiddify uses its supported query-style import link and an iOS Streisand preset provides URL/QR import.
+- Fetching a subscription without a format override preserves the saved client format instead of always returning sing-box JSON.
 - Nginx proxies subscription collection requests without a trailing-slash redirect, preserving POST bodies and the selected subscription owner.
 - Subscription collection GET/POST requests accept both trailing-slash forms without redirects, preserving authentication and ownership checks.
 - Bot configuration instructions now recreate the container so edited environment values take effect.

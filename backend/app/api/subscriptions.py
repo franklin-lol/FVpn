@@ -152,7 +152,7 @@ async def subscription_info(token: str, response: Response, db: AsyncSession = D
 @router.get("/fetch/{token}")
 async def fetch_subscription(
     token: str,
-    format: str = "singbox",
+    format: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     sub, user = await _public_subscription(token, db)

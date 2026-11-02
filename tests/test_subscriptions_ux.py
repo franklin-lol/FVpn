@@ -1,6 +1,8 @@
 """Subscription ownership and token-scoped metadata against real ASGI/SQLite."""
 
+import base64
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -113,6 +115,45 @@ async def test_public_info_minimal_no_store_and_formats_match_exports(context):
     qr = await client.get(f"/subscriptions/qr/{sub.token}")
     assert qr.status_code == 200
     assert qr.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("stored_format", ["base64", "v2rayng", "shadowrocket"])
+async def test_fetch_without_format_preserves_the_subscription_client_format(context, stored_format):
+    client, app, sessions, _, _, sub, _, _ = context
+    app.dependency_overrides.pop(get_current_user)
+    async with sessions() as db:
+        stored = await db.get(Subscription, sub.id)
+        stored.format = stored_format
+        await db.commit()
+    response = await client.get(f"/subscriptions/fetch/{sub.token}")
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("text/plain")
+    assert response.headers["Cache-Control"] == "no-store"
+    raw = response.text if stored_format == "shadowrocket" else base64.b64decode(response.content).decode()
+    uris = [line for line in raw.splitlines() if line and not line.startswith("#")]
+    assert len(uris) == 1
+    parsed = urlsplit(uris[0])
+    assert parsed.scheme == "ss"
+    assert parsed.hostname == "fixture.invalid"
+    assert parsed.port == 443
+    assert base64.b64decode(parsed.username).decode() == "aes-256-gcm:proxy-password-SENTINEL"
+    assert "ssh-key-SENTINEL" not in raw
+
+
+@pytest.mark.anyio
+async def test_fetch_explicit_format_overrides_the_subscription_client_format(context):
+    client, app, _, _, _, sub, _, _ = context
+    app.dependency_overrides.pop(get_current_user)
+    response = await client.get(f"/subscriptions/fetch/{sub.token}", params={"format": "singbox"})
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("application/json")
+    assert response.headers["Cache-Control"] == "no-store"
+    outbound = next(item for item in response.json()["outbounds"] if item["type"] == "shadowsocks")
+    assert outbound["server"] == "fixture.invalid"
+    assert outbound["server_port"] == 443
+    assert outbound["password"] == "proxy-password-SENTINEL"
+    assert "ssh-key-SENTINEL" not in response.text
 
 
 @pytest.mark.anyio
